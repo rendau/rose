@@ -1,0 +1,7 @@
+Rose is useful library for creating c programs
+
+COMPILATION:
+	make
+
+DEPENDENCIES:
+        libssl1.0.0+ [libdb6.0+]

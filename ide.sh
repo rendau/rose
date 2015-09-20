@@ -1,0 +1,53 @@
+#!/bin/bash
+
+files="\
+ ide.sh\
+ .gitignore\
+ README\
+ VERSION\
+ LICENSE\
+ Makefile\
+ trace.h\
+ ns.h\
+ ns.c\
+ mem.h\
+ mem.c\
+ spm.h\
+ spm.c\
+ objtypes.h\
+ obj.h\
+ bool.h\
+ bool.c\
+ int.h\
+ int.c\
+ float.h\
+ float.c\
+ str.h\
+ str.c\
+ chain.h\
+ chain.c\
+ hmap.h\
+ hmap.c\
+ crypt.h\
+ crypt.c\
+ poll.h\
+ poll.c\
+ sm.h\
+ sm.c\
+ frmp.h\
+ frmp.c\
+ httpp.h\
+ httpp.c\
+ wsp.h\
+ wsp.c\
+ stz.h\
+ stz.c\
+ eh.h\
+ eh.c\
+ thm.h\
+ thm.c\
+ test.c\
+ pdb.h\
+ pdb.c\
+"
+emacs -mm -bg "LemonChiffon2" $files -f delete-window &
