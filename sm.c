@@ -860,9 +860,11 @@ sm__close_h(poll_fd_t poll_fd) {
   }
 
   if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->autoconnect) {
-    SSL_CTX_free(sock->ssl_ctx);
-    sock->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
-    ASSERT(!sock->ssl_ctx, "SSL_CTX_new");
+    if(sock->secure) {
+      SSL_CTX_free(sock->ssl_ctx);
+      sock->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
+      ASSERT(!sock->ssl_ctx, "SSL_CTX_new");
+    }
 
     ret = poll_disable_fd(poll_fd);
     ASSERT(ret, "poll_disable_fd");
