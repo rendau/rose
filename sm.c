@@ -90,9 +90,8 @@ static int
 sm_iterp(time_t now) {
   sm_sock_t sock;
   chain_slot_t chs1, chs2;
-  struct hostent *hent;
   struct sockaddr_in addr;
-  struct in_addr *ia;
+  uint32_t da;
   int newfd, ret;
 
   chs1 = tsocks->first;
@@ -133,18 +132,16 @@ sm_iterp(time_t now) {
       if(now - sock->lrctt >= sock->rci) {
         sock->lrctt = now;
 
-        hent = gethostbyname(sock->haddr);
-        if(hent && (hent->h_length > 0)) {
-          ia = (struct in_addr *)hent->h_addr_list[0];
-
+        da = sm_get_na4dn(sock->sas);
+        if(da) {
           newfd = socket(AF_INET, SOCK_STREAM, 0);
           ASSERT(newfd<0, "socket");
 
           sm_set_fd_nb(newfd);
 
           addr.sin_family = AF_INET;
-          addr.sin_addr.s_addr = ia->s_addr;
-          addr.sin_port = htons(sock->hport);
+          addr.sin_addr.s_addr = da;
+          addr.sin_port = htons(sock->sp);
 
           ret = connect(newfd, (struct sockaddr *)&addr, sizeof(addr));
           ASSERT(ret && (errno != EINPROGRESS), "connect");
@@ -180,6 +177,7 @@ sm_listen(int port) {
   ret = setsockopt(newfd, SOL_SOCKET, SO_REUSEADDR, &v, sizeof(v));
   ASSERT(ret<0, "setsockopt");
 
+  memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
   addr.sin_port = htons(port);
   addr.sin_addr.s_addr = INADDR_ANY;
@@ -196,8 +194,8 @@ sm_listen(int port) {
   ASSERT(!sock, "sm_sock_new");
   sock->connected = 1;
   sock->con_state = 1;
-  strcpy(sock->saddr, "0.0.0.0");
-  sock->sport = port;
+  strcpy(sock->cas, "0.0.0.0");
+  sock->cp = port;
 
   sock->poll_fd = poll_add_fd(newfd, sock, sm__read_h,
                               sm__write_h, sm__close_h);
@@ -236,7 +234,6 @@ sm_slisten(int port, char *cert, char *key) {
 
 sm_sock_t
 sm_connect(char *ip, int port, uint16_t rci) {
-  struct in_addr iaddr;
   sm_sock_t sock;
   int ret;
 
@@ -251,10 +248,9 @@ sm_connect(char *ip, int port, uint16_t rci) {
   sock->poll_fd->eh = sm__close_h;
   sock->autoconnect = rci ? 1 : 0;
   sock->con_state = 2;
-  if(inet_aton(ip, &iaddr))
-    sock->sa = (uint32_t)iaddr.s_addr;
-  strcpy(sock->haddr, ip);
-  sock->hport = port;
+  sock->sa = inet_addr(ip);
+  strcpy(sock->sas, ip);
+  sock->sp = port;
   sock->ceto = 3;
   sock->rci = rci;
 
@@ -359,6 +355,35 @@ sm_close(sm_sock_t sock) {
   return -1;
 }
 
+uint32_t
+sm_get_na4ip(char *ip) {
+  return inet_addr(ip);
+}
+
+uint32_t
+sm_get_na4dn(char *dn) {
+  struct addrinfo hints, *ai;
+  uint32_t res;
+  int ret;
+
+  res = 0;
+
+  memset(&hints, 0, sizeof(struct addrinfo));
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_DGRAM;
+  hints.ai_flags = AI_PASSIVE;
+
+  ret = getaddrinfo(dn, NULL, &hints, &ai);
+  ASSERT(ret, "getaddrinfo");
+
+  if(ai)
+    res = ((struct sockaddr_in *)ai->ai_addr)->sin_addr.s_addr;
+
+  return res;
+ error:
+  return 0;
+}
+
 void
 sm_set_fd_nb(int fd) {
   int flags;
@@ -402,16 +427,16 @@ int
 sm_get_fd_mac(sm_sock_t sock, char *dev, unsigned char **res) {
   struct arpreq ar;
   unsigned char *ptr;
-  struct in_addr ipaddr;
+  /* struct in_addr ipaddr; */
   int ret;
 
   *res = _mac;
 
   memset(&ar, 0, sizeof(struct arpreq));
   ((struct sockaddr_in *) &ar.arp_pa)->sin_family = AF_INET;
-  ret = inet_aton(sock->saddr, &ipaddr);
-  ASSERT(ret == 0, "inet_aton");
-  ((struct sockaddr_in *) &ar.arp_pa)->sin_addr = ipaddr;
+  /* ret = inet_aton(sock->cas, &ipaddr); */
+  /* ASSERT(ret == 0, "inet_aton"); */
+  ((struct sockaddr_in *) &ar.arp_pa)->sin_addr.s_addr = sock->ca;
   ((struct sockaddr_in *) &ar.arp_ha)->sin_family = ARPHRD_ETHER;
   strcpy(ar.arp_dev, dev);
 
@@ -432,22 +457,13 @@ sm_get_fd_mac(sm_sock_t sock, char *dev, unsigned char **res) {
 
 int
 sm_generate_clients_uid(sm_sock_t sock, str_t dst) {
-  struct in_addr ia;
   unsigned char *ap, *pp;
-  uint32_t port;
   int ret;
 
   ASSERT(!sock->connected, "socket is not connected");
 
-  memset(&ia, 0, sizeof(struct in_addr));
-
-  ret = inet_aton(sock->saddr, &ia);
-  ASSERT(!ret, "inet_aton");
-
-  port = (uint32_t)sock->sport;
-
-  ap = (unsigned char *)&ia.s_addr;
-  pp = (unsigned char *)&port;
+  ap = (unsigned char *)&sock->ca;
+  pp = (unsigned char *)&sock->cp;
 
   ret = str_addf(dst, "%02x%02x%02x%02x%02x%02x%02x%02x",
                  pp[0], ap[1], pp[2], ap[3],
@@ -483,15 +499,15 @@ sm__accept_h(poll_fd_t poll_fd) {
     ASSERT(!csock, "sm_sock_new");
 
     csock->ca = (uint32_t)addr.sin_addr.s_addr;
-    strcpy(csock->saddr, inet_ntoa(addr.sin_addr));
-    csock->sport = ntohl(addr.sin_port);
+    strcpy(csock->cas, inet_ntoa(addr.sin_addr));
+    csock->cp = ntohl(addr.sin_port);
     addr_l = sizeof(struct sockaddr_in);
     memset(&addr, 0, addr_l);
     ret = getsockname(newfd, (struct sockaddr *)&addr, (socklen_t *)&addr_l);
     ASSERT(ret==-1, "getsockname()");
     csock->sa = (uint32_t)addr.sin_addr.s_addr;
-    strcpy(csock->haddr, inet_ntoa(addr.sin_addr));
-    csock->hport = ntohl(addr.sin_port);
+    strcpy(csock->sas, inet_ntoa(addr.sin_addr));
+    csock->sp = ntohl(addr.sin_port);
 
     csock->poll_fd = poll_add_fd(newfd, csock, sm__read_h,
 				 sm__write_h, sm__close_h);
@@ -597,8 +613,8 @@ sm__connect_h(poll_fd_t poll_fd, int stop) {
     ret = getsockname(poll_fd->fd, (struct sockaddr *)&addr, (socklen_t *)&addr_l);
     ASSERT(ret==-1, "getsockname()");
     sock->ca = (uint32_t)addr.sin_addr.s_addr;
-    strcpy(sock->saddr, inet_ntoa(addr.sin_addr));
-    sock->sport = ntohl(addr.sin_port);
+    strcpy(sock->cas, inet_ntoa(addr.sin_addr));
+    sock->cp = ntohl(addr.sin_port);
 
     ret = poll_mod_fd(poll_fd, 0);
     ASSERT(ret, "poll_mod_fd");

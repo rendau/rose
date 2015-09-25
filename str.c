@@ -96,7 +96,7 @@ str_alloc(str_t str, uint32_t size) {
 
   if(str->s < size) {
     while(str->s < size)
-      str->s *= 2;
+      str->s += 100;
     ptr = realloc(str->v, str->s);
     ASSERT(!ptr, "realloc");
     str->v = ptr;

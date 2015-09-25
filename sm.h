@@ -4,7 +4,7 @@
 #include "obj.h"
 #include <inttypes.h>
 #include <time.h>
-#include <openssl/ssl.h> 
+#include <openssl/ssl.h>
 
 #define SM_MAC_LEN 6
 
@@ -40,11 +40,11 @@ struct sm_sock_st {
   uint16_t cto; // connection timeout
   time_t lat; // last activity time
   uint32_t ca; // client address in bin
-  char saddr[17]; // client address in text
-  uint32_t sport; // client port
+  uint32_t cp; // client port
+  char cas[17]; // client address in string
   uint32_t sa; // server address in bin
-  char haddr[17]; // server address in text
-  uint32_t hport; // server port
+  uint32_t sp; // server port
+  char sas[17]; // server address in string
   str_t sbuf;
   uint32_t scount;
   void *ro;
@@ -52,7 +52,6 @@ struct sm_sock_st {
   sm_r_handler_t rh;
   sm_cc_handler_t eh;
 };
-
 
 
 int
@@ -78,6 +77,12 @@ sm_send(sm_sock_t sock, char *d, uint32_t ds);
 
 int
 sm_close(sm_sock_t sock);
+
+uint32_t
+sm_get_na4ip(char *ip);
+
+uint32_t
+sm_get_na4dn(char *dn);
 
 void
 sm_set_fd_nb(int fd);

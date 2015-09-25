@@ -34,6 +34,8 @@ files="\
  poll.c\
  sm.h\
  sm.c\
+ usm.h\
+ usm.c\
  frmp.h\
  frmp.c\
  httpp.h\

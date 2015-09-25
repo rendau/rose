@@ -13,10 +13,10 @@ LIBS = -lc -lssl -lcrypto -lpthread
 
 HEADERS = trace.h ns.h mem.h spm.h objtypes.h obj.h \
 	bool.h int.h float.h str.h chain.h \
-	hmap.h crypt.h poll.h sm.h frmp.h httpp.h wsp.h \
+	hmap.h crypt.h poll.h sm.h usm.h frmp.h httpp.h wsp.h \
 	stz.h eh.h thm.h
 CFILES = ns.c mem.c spm.c bool.c int.c float.c str.c \
-	chain.c hmap.c crypt.c poll.c sm.c frmp.c httpp.c \
+	chain.c hmap.c crypt.c poll.c sm.c usm.c frmp.c httpp.c \
 	wsp.c stz.c eh.c thm.c
 
 MAKEARGS = 
@@ -60,7 +60,7 @@ $(TARGET_STAT): $(OBJECTS)
 	$(AR) rcs $@ $^
 
 test: test.o $(TARGET_DYN)
-	$(CC) -L. $< -o testlib -l$(TARGET)
+	$(CC) -L. -Wl,-rpath,. $< -o testlib -l$(TARGET)
 
 default: $(TARGET_DYN) $(TARGET_STAT)
 
@@ -74,8 +74,6 @@ release:
 	mkdir release/$(TARGET)
 	cp $(TARGET_DYN) release/$(TARGET)/
 	cp README release/$(TARGET)/
-	mkdir release/$(TARGET)/include
-	cp $(HEADERS) release/$(TARGET)/include
 
 clean:
 	rm -rf *.o *~ testlib
