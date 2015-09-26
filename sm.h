@@ -15,9 +15,11 @@ typedef struct str_st *str_t;
 
 typedef int (*sm_cc_handler_t) (sm_sock_t sock);
 typedef int (*sm_r_handler_t) (sm_sock_t sock, char *d, int ds);
+typedef int (*sm_udp_r_handler_t) (sm_sock_t sock, uint32_t sa, char *d, int ds);
 
 typedef enum {
   SM_SOCK_TYPE_SERVER,
+  SM_SOCK_TYPE_USERVER,
   SM_SOCK_TYPE_CLIENT,
   SM_SOCK_TYPE_CONNECT,
   SM_SOCK_TYPE_CUSTOM
@@ -45,11 +47,12 @@ struct sm_sock_st {
   uint32_t sa; // server address in bin
   uint32_t sp; // server port
   char sas[17]; // server address in string
-  str_t sbuf;
+  str_t rsb;
   uint32_t scount;
   void *ro;
   sm_cc_handler_t ch;
   sm_r_handler_t rh;
+  sm_udp_r_handler_t udp_rh;
   sm_cc_handler_t eh;
 };
 
@@ -64,6 +67,9 @@ sm_sock_t
 sm_slisten(int port, char *cert, char *key);
 
 sm_sock_t
+sm_udp_listen(int port, uint32_t bs);
+
+sm_sock_t
 sm_connect(char *ip, int port, uint16_t rci);
 
 sm_sock_t
@@ -76,6 +82,9 @@ int
 sm_send(sm_sock_t sock, char *d, uint32_t ds);
 
 int
+sm_udp_send(uint32_t da, uint32_t dp, char *d, uint32_t ds);
+
+int
 sm_close(sm_sock_t sock);
 
 uint32_t
@@ -83,6 +92,9 @@ sm_get_na4ip(char *ip);
 
 uint32_t
 sm_get_na4dn(char *dn);
+
+char *
+sm_get_ip4na(uint32_t na);
 
 void
 sm_set_fd_nb(int fd);
