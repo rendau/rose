@@ -38,19 +38,50 @@ crypt_base64_enc(str_t res, char *data, uint32_t dlen) {
   int ret;
 
   b64 = BIO_new(BIO_f_base64());
-  ASSERT(!b64, "BIO_new()");
+  ASSERT(!b64, "BIO_new");
   bmem = BIO_new(BIO_s_mem());
-  ASSERT(!bmem, "BIO_new()");
+  ASSERT(!bmem, "BIO_new");
   b64 = BIO_push(b64, bmem);
-  ASSERT(!b64, "BIO_push()");
+  ASSERT(!b64, "BIO_push");
   ret = BIO_write(b64, data, dlen);
-  ASSERT(ret<=0, "BIO_write()");
+  ASSERT(ret<=0, "BIO_write");
   ret = BIO_flush(b64);
-  ASSERT(ret==-1, "BIO_flush()");
+  ASSERT(ret==-1, "BIO_flush");
   BIO_get_mem_ptr(b64, &bptr);
   ret = str_set_val(res, bptr->data, bptr->length-1);
-  ASSERT(ret!=0, "str_set()");
+  ASSERT(ret!=0, "str_set");
   BIO_free_all(b64);
+
+  return 0;
+ error:
+  return -1;
+}
+
+int
+crypt_base64_dec(str_t res, char *data, uint32_t dlen) {
+  BIO *bio, *b64;
+  int ret, l;
+
+  if(!dlen)
+    dlen = strlen(data);
+
+  ret = str_alloc(res, 2+3*dlen/4);
+  ASSERT(ret, "str_alloc");
+
+  b64 = BIO_new(BIO_f_base64());
+  ASSERT(!b64, "BIO_new");
+  bio = BIO_new_mem_buf(data, dlen);
+  ASSERT(!bio, "BIO_new_mem_buf");
+  bio = BIO_push(b64, bio);
+  ASSERT(!bio, "BIO_push");
+  BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+  l = BIO_read(bio, res->v, dlen);
+  ASSERT(l<=0, "BIO_read %d", l);
+
+  ret = str_expand(res, l);
+  ASSERT(ret, "str_expand");
+
+  BIO_free_all(bio);
 
   return 0;
  error:
