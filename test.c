@@ -11,12 +11,9 @@ main(int argc, char **argv) {
   int ret;
 
   str = str_new();
-  ASSERT(!str, "str_new");
 
-  ret = crypt_base64_dec(str, "aGVsbG8gYmFzZTY0IQ==", 0);
-  ASSERT(ret, "crypt_base64_dec");
-
-  TRC("%s\n", str->v);
+  ret = str_write_file(str, "out.txt");
+  ASSERT(ret, "str_write_file");
 
   return 0;
  error:

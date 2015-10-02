@@ -235,6 +235,25 @@ str_write_file(str_t str, char *fpath) {
   return -1;
 }
 
+int
+str_append_file(str_t str, char *fpath) {
+  FILE *file;
+  int wc;
+
+  file = fopen(fpath, "a");
+  if(!file)
+    return 1;
+
+  wc = fwrite(str->v, 1, str->l, file);
+  ASSERT(wc!=str->l, "fwrite");
+
+  fclose(file);
+
+  return 0;
+ error:
+  return -1;
+}
+
 void
 str_reset(str_t str) {
   str->l = 0;
