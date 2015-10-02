@@ -18,6 +18,9 @@ int
 crypt_base64_enc(str_t res, char *data, uint32_t dlen);
 
 int
+crypt_base64_dec(str_t res, char *data, uint32_t dlen);
+
+int
 crypt_rand_bytes(unsigned char *buf, int bsize);
 
 #endif

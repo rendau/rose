@@ -96,7 +96,7 @@ str_alloc(str_t str, uint32_t size) {
 
   if(str->s < size) {
     while(str->s < size)
-      str->s *= 2;
+      str->s += 100;
     ptr = realloc(str->v, str->s);
     ASSERT(!ptr, "realloc");
     str->v = ptr;
@@ -222,6 +222,25 @@ str_write_file(str_t str, char *fpath) {
   int wc;
 
   file = fopen(fpath, "w");
+  if(!file)
+    return 1;
+
+  wc = fwrite(str->v, 1, str->l, file);
+  ASSERT(wc!=str->l, "fwrite");
+
+  fclose(file);
+
+  return 0;
+ error:
+  return -1;
+}
+
+int
+str_append_file(str_t str, char *fpath) {
+  FILE *file;
+  int wc;
+
+  file = fopen(fpath, "a");
   if(!file)
     return 1;
 

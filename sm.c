@@ -26,8 +26,11 @@
 static uint8_t inited = 0;
 static uint8_t ssl_inited = 0;
 static chain_t wsocks, tsocks, csocks;
+static int udp_ssock;
 static uint16_t sock_mc = 0;
 static unsigned char _mac[SM_MAC_LEN];
+static struct sockaddr_in si1;
+static socklen_t silen = sizeof(struct sockaddr_in);
 
 static void sm_ssl_init();
 static int sm_iterp(time_t now);
@@ -61,6 +64,10 @@ sm_init() {
     csocks = chain_new();
     ASSERT(!csocks, "chain_new");
 
+    udp_ssock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    ASSERT(udp_ssock<0, "socket");
+    sm_set_fd_nb(udp_ssock);
+
     sock_mc = mem_new_ot("sm_sock",
 			 sizeof(struct sm_sock_st),
 			 SM_SOCK_CACHE_SIZE, NULL);
@@ -90,9 +97,7 @@ static int
 sm_iterp(time_t now) {
   sm_sock_t sock;
   chain_slot_t chs1, chs2;
-  struct hostent *hent;
-  struct sockaddr_in addr;
-  struct in_addr *ia;
+  uint32_t da;
   int newfd, ret;
 
   chs1 = tsocks->first;
@@ -133,20 +138,19 @@ sm_iterp(time_t now) {
       if(now - sock->lrctt >= sock->rci) {
         sock->lrctt = now;
 
-        hent = gethostbyname(sock->haddr);
-        if(hent && (hent->h_length > 0)) {
-          ia = (struct in_addr *)hent->h_addr_list[0];
-
+        da = sm_get_na4dn(sock->sas);
+        if(da) {
           newfd = socket(AF_INET, SOCK_STREAM, 0);
           ASSERT(newfd<0, "socket");
 
           sm_set_fd_nb(newfd);
 
-          addr.sin_family = AF_INET;
-          addr.sin_addr.s_addr = ia->s_addr;
-          addr.sin_port = htons(sock->hport);
+	  memset(&si1, 0, silen);
+	  si1.sin_family = AF_INET;
+	  si1.sin_addr.s_addr = da;
+	  si1.sin_port = htons(sock->sp);
 
-          ret = connect(newfd, (struct sockaddr *)&addr, sizeof(addr));
+          ret = connect(newfd, (struct sockaddr *)&si1, silen);
           ASSERT(ret && (errno != EINPROGRESS), "connect");
 
           sock->poll_fd->fd = newfd;
@@ -170,7 +174,6 @@ sm_iterp(time_t now) {
 sm_sock_t
 sm_listen(int port) {
   sm_sock_t sock;
-  struct sockaddr_in addr;
   int newfd, ret, v;
 
   newfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -180,11 +183,12 @@ sm_listen(int port) {
   ret = setsockopt(newfd, SOL_SOCKET, SO_REUSEADDR, &v, sizeof(v));
   ASSERT(ret<0, "setsockopt");
 
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  addr.sin_addr.s_addr = INADDR_ANY;
+  memset(&si1, 0, silen);
+  si1.sin_family = AF_INET;
+  si1.sin_port = htons(port);
+  si1.sin_addr.s_addr = INADDR_ANY;
 
-  ret = bind(newfd, (struct sockaddr *)&addr, sizeof(addr));
+  ret = bind(newfd, (struct sockaddr *)&si1, silen);
   ASSERT(ret<0, "bind");
 
   ret = listen(newfd, 1);
@@ -196,8 +200,8 @@ sm_listen(int port) {
   ASSERT(!sock, "sm_sock_new");
   sock->connected = 1;
   sock->con_state = 1;
-  strcpy(sock->saddr, "0.0.0.0");
-  sock->sport = port;
+  strcpy(sock->cas, "0.0.0.0");
+  sock->cp = port;
 
   sock->poll_fd = poll_add_fd(newfd, sock, sm__read_h,
                               sm__write_h, sm__close_h);
@@ -235,8 +239,43 @@ sm_slisten(int port, char *cert, char *key) {
 }
 
 sm_sock_t
+sm_udp_listen(int port, uint32_t bs) {
+  sm_sock_t sock;
+  int newfd, ret, v;
+
+  newfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  ASSERT(newfd<0, "socket");
+
+  v = 1;
+  ret = setsockopt(newfd, SOL_SOCKET, SO_REUSEADDR, &v, sizeof(v));
+  ASSERT(ret<0, "setsockopt");
+
+  memset(&si1, 0, silen);
+  si1.sin_family = AF_INET;
+  si1.sin_port = htons(port);
+  si1.sin_addr.s_addr = INADDR_ANY;
+
+  ret = bind(newfd, (struct sockaddr *)&si1, silen);
+  ASSERT(ret<0, "bind");
+
+  sm_set_fd_nb(newfd);
+
+  sock = sm_sock_new(SM_SOCK_TYPE_USERVER);
+  ASSERT(!sock, "sm_sock_new");
+
+  ret = str_alloc(sock->rsb, bs);
+  ASSERT(ret, "str_alloc");
+
+  sock->poll_fd = poll_add_fd(newfd, sock, sm__read_h, NULL, sm__close_h);
+  ASSERT(!sock->poll_fd, "poll_add_fd");
+
+  return sock;
+ error:
+  return NULL;
+}
+
+sm_sock_t
 sm_connect(char *ip, int port, uint16_t rci) {
-  struct in_addr iaddr;
   sm_sock_t sock;
   int ret;
 
@@ -251,10 +290,9 @@ sm_connect(char *ip, int port, uint16_t rci) {
   sock->poll_fd->eh = sm__close_h;
   sock->autoconnect = rci ? 1 : 0;
   sock->con_state = 2;
-  if(inet_aton(ip, &iaddr))
-    sock->sa = (uint32_t)iaddr.s_addr;
-  strcpy(sock->haddr, ip);
-  sock->hport = port;
+  sock->sa = inet_addr(ip);
+  strcpy(sock->sas, ip);
+  sock->sp = port;
   sock->ceto = 3;
   sock->rci = rci;
 
@@ -325,7 +363,7 @@ sm_send(sm_sock_t sock, char *d, uint32_t ds) {
   ASSERT(!sock->connected, "socket not connected");
 
   if(sock->con_state != 3) {
-    ret = str_add(sock->sbuf, d, ds);
+    ret = str_add(sock->rsb, d, ds);
     ASSERT(ret, "str_add");
 
     ret = poll_mod_fd(sock->poll_fd, 1);
@@ -344,19 +382,79 @@ sm_send(sm_sock_t sock, char *d, uint32_t ds) {
 }
 
 int
-sm_close(sm_sock_t sock) {
+sm_udp_send(uint32_t da, uint32_t dp, char *d, uint32_t ds) {
   int ret;
 
-  ASSERT(!sock->connected, "socket not connected");
+  memset(&si1, 0, silen);
+  si1.sin_family = AF_INET;
+  si1.sin_port = htons(dp);
+  si1.sin_addr.s_addr = da;
 
-  sock->con_state = 3;
-
-  ret = chain_append(csocks, OBJ(sock));
-  ASSERT(ret, "chain_append");
+  ret = sendto(udp_ssock, d, ds, 0, (struct sockaddr *)&si1, silen);
+  ASSERT(ret!=ds, "sendto");
 
   return 0;
  error:
   return -1;
+}
+
+int
+sm_close(sm_sock_t sock) {
+  int ret;
+
+  if(sock->type == SM_SOCK_TYPE_USERVER) {
+    close(sock->poll_fd->fd);
+    ret = poll_remove_fd(sock->poll_fd);
+    ASSERT(ret, "poll_remove_fd");
+    sm_sock_destroy(sock);
+  } else {
+    ASSERT(!sock->connected, "socket not connected");
+    sock->con_state = 3;
+    ret = chain_append(csocks, OBJ(sock));
+    ASSERT(ret, "chain_append");
+  }
+
+  return 0;
+ error:
+  return -1;
+}
+
+uint32_t
+sm_get_na4ip(char *ip) {
+  return inet_addr(ip);
+}
+
+uint32_t
+sm_get_na4dn(char *dn) {
+  struct addrinfo hints, *ai;
+  uint32_t res;
+  int ret;
+
+  res = 0;
+
+  memset(&hints, 0, sizeof(struct addrinfo));
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_DGRAM;
+  hints.ai_flags = AI_PASSIVE;
+
+  ret = getaddrinfo(dn, NULL, &hints, &ai);
+  ASSERT(ret, "getaddrinfo");
+
+  if(ai)
+    res = ((struct sockaddr_in *)ai->ai_addr)->sin_addr.s_addr;
+
+  return res;
+ error:
+  return 0;
+}
+
+char *
+sm_get_ip4na(uint32_t na) {
+  struct in_addr ia;
+
+  ia.s_addr = na;
+
+  return inet_ntoa(ia);
 }
 
 void
@@ -402,16 +500,13 @@ int
 sm_get_fd_mac(sm_sock_t sock, char *dev, unsigned char **res) {
   struct arpreq ar;
   unsigned char *ptr;
-  struct in_addr ipaddr;
   int ret;
 
   *res = _mac;
 
   memset(&ar, 0, sizeof(struct arpreq));
   ((struct sockaddr_in *) &ar.arp_pa)->sin_family = AF_INET;
-  ret = inet_aton(sock->saddr, &ipaddr);
-  ASSERT(ret == 0, "inet_aton");
-  ((struct sockaddr_in *) &ar.arp_pa)->sin_addr = ipaddr;
+  ((struct sockaddr_in *) &ar.arp_pa)->sin_addr.s_addr = sock->ca;
   ((struct sockaddr_in *) &ar.arp_ha)->sin_family = ARPHRD_ETHER;
   strcpy(ar.arp_dev, dev);
 
@@ -432,22 +527,13 @@ sm_get_fd_mac(sm_sock_t sock, char *dev, unsigned char **res) {
 
 int
 sm_generate_clients_uid(sm_sock_t sock, str_t dst) {
-  struct in_addr ia;
   unsigned char *ap, *pp;
-  uint32_t port;
   int ret;
 
   ASSERT(!sock->connected, "socket is not connected");
 
-  memset(&ia, 0, sizeof(struct in_addr));
-
-  ret = inet_aton(sock->saddr, &ia);
-  ASSERT(!ret, "inet_aton");
-
-  port = (uint32_t)sock->sport;
-
-  ap = (unsigned char *)&ia.s_addr;
-  pp = (unsigned char *)&port;
+  ap = (unsigned char *)&sock->ca;
+  pp = (unsigned char *)&sock->cp;
 
   ret = str_addf(dst, "%02x%02x%02x%02x%02x%02x%02x%02x",
                  pp[0], ap[1], pp[2], ap[3],
@@ -462,17 +548,16 @@ sm_generate_clients_uid(sm_sock_t sock, str_t dst) {
 static int
 sm__accept_h(poll_fd_t poll_fd) {
   sm_sock_t sock, csock;
-  struct sockaddr_in addr;
-  socklen_t addr_l=0;
+  socklen_t sl;
   int ret, newfd;
 
   sock = (sm_sock_t)poll_fd->ro;
 
   ASSERT(!sock->ch, "sock->ch is null");
 
-  addr_l = sizeof(struct sockaddr_in);
-  memset(&addr, 0, addr_l);
-  newfd = accept(poll_fd->fd, (struct sockaddr *)&addr, (socklen_t *)&addr_l);
+  sl = silen;
+  memset(&si1, 0, silen);
+  newfd = accept(poll_fd->fd, (struct sockaddr *)&si1, &sl);
   if(newfd > 0) {
     sm_set_fd_nb(newfd);
 
@@ -482,16 +567,16 @@ sm__accept_h(poll_fd_t poll_fd) {
     csock = sm_sock_new(SM_SOCK_TYPE_CLIENT);
     ASSERT(!csock, "sm_sock_new");
 
-    csock->ca = (uint32_t)addr.sin_addr.s_addr;
-    strcpy(csock->saddr, inet_ntoa(addr.sin_addr));
-    csock->sport = ntohl(addr.sin_port);
-    addr_l = sizeof(struct sockaddr_in);
-    memset(&addr, 0, addr_l);
-    ret = getsockname(newfd, (struct sockaddr *)&addr, (socklen_t *)&addr_l);
+    csock->ca = (uint32_t)si1.sin_addr.s_addr;
+    strcpy(csock->cas, inet_ntoa(si1.sin_addr));
+    csock->cp = ntohl(si1.sin_port);
+    sl = silen;
+    memset(&si1, 0, silen);
+    ret = getsockname(newfd, (struct sockaddr *)&si1, &sl);
     ASSERT(ret==-1, "getsockname()");
-    csock->sa = (uint32_t)addr.sin_addr.s_addr;
-    strcpy(csock->haddr, inet_ntoa(addr.sin_addr));
-    csock->hport = ntohl(addr.sin_port);
+    csock->sa = (uint32_t)si1.sin_addr.s_addr;
+    strcpy(csock->sas, inet_ntoa(si1.sin_addr));
+    csock->sp = ntohl(si1.sin_port);
 
     csock->poll_fd = poll_add_fd(newfd, csock, sm__read_h,
 				 sm__write_h, sm__close_h);
@@ -559,9 +644,8 @@ static int
 sm__connect_h(poll_fd_t poll_fd, int stop) {
   sm_sock_t sock;
   chain_slot_t sock_chs;
-  struct sockaddr_in addr;
-  socklen_t slen;
-  int ret, addr_l, cfail;
+  socklen_t sl;
+  int ret, cfail;
 
   sock = (sm_sock_t)poll_fd->ro;
 
@@ -576,8 +660,8 @@ sm__connect_h(poll_fd_t poll_fd, int stop) {
   if(stop) {
     cfail = 1;
   } else {
-    slen = sizeof(cfail);
-    ret = getsockopt(poll_fd->fd, SOL_SOCKET, SO_ERROR, &cfail, &slen);
+    sl = sizeof(cfail);
+    ret = getsockopt(poll_fd->fd, SOL_SOCKET, SO_ERROR, &cfail, &sl);
     ASSERT(ret<0, "getsockopt");
   }
 
@@ -592,13 +676,13 @@ sm__connect_h(poll_fd_t poll_fd, int stop) {
 
     sock->con_state = 0;
 
-    addr_l = sizeof(struct sockaddr_in);
-    memset(&addr, 0, addr_l);
-    ret = getsockname(poll_fd->fd, (struct sockaddr *)&addr, (socklen_t *)&addr_l);
+    sl = silen;
+    memset(&si1, 0, silen);
+    ret = getsockname(poll_fd->fd, (struct sockaddr *)&si1, &sl);
     ASSERT(ret==-1, "getsockname()");
-    sock->ca = (uint32_t)addr.sin_addr.s_addr;
-    strcpy(sock->saddr, inet_ntoa(addr.sin_addr));
-    sock->sport = ntohl(addr.sin_port);
+    sock->ca = (uint32_t)si1.sin_addr.s_addr;
+    strcpy(sock->cas, inet_ntoa(si1.sin_addr));
+    sock->cp = ntohl(si1.sin_port);
 
     ret = poll_mod_fd(poll_fd, 0);
     ASSERT(ret, "poll_mod_fd");
@@ -661,37 +745,49 @@ static int
 sm__read_h(poll_fd_t poll_fd) {
   char rbuff[4096];
   sm_sock_t sock;
+  socklen_t sl;
   int rc, ret;
 
   sock = (sm_sock_t)poll_fd->ro;
 
-  if(sock->con_state != 3) {
-    if(sock->type == SM_SOCK_TYPE_SERVER)
-      return sm__accept_h(poll_fd);
+  if(sock->type == SM_SOCK_TYPE_USERVER) {
+    sl = silen;
+    memset(&si1, 0, silen);
+    rc = recvfrom(sock->poll_fd->fd, sock->rsb->v, sock->rsb->s, 0,
+		  (struct sockaddr *)&si1, &sl);
+    ASSERT(rc<=0, "recvfrom ret=%d", rc);
+    ASSERT(!sock->udp_rh, "has not rh");
+    ret = sock->udp_rh(sock, (uint32_t)si1.sin_addr.s_addr, sock->rsb->v, rc);
+    ASSERT(ret, "rh");
+  } else {
+    if(sock->con_state != 3) {
+      if(sock->type == SM_SOCK_TYPE_SERVER)
+	return sm__accept_h(poll_fd);
 
-    if(sock->cto)
-      time(&sock->lat);
+      if(sock->cto)
+	time(&sock->lat);
 
-    ASSERT(!sock->rh, "sock->rh is null");
+      ASSERT(!sock->rh, "sock->rh is null");
 
-    if(sock->secure) {
-      if(sock->ssl_state == 1)
-        return sm__sslAccept_h(sock);
-      else if(sock->ssl_state == 2)
-        return sm__sslConnect_h(sock);
-      else if(sock->ssl_state == 3)
-        return sm__sslRead_h(sock);
-      else if(sock->ssl_state == 4)
-        return sm__sslWrite_h(sock);
-    } else {
-      while((rc = read(poll_fd->fd, rbuff, 4095)) > 0) {
-        ret = sock->rh(sock, rbuff, rc);
-        ASSERT(ret, "sock->rh");
-      }
-      if(rc == 0) {
-        return sm__close_h(poll_fd);
-      } else if(rc < 0) {
-        ASSERT((errno != EAGAIN) && (errno != EWOULDBLOCK), "read");
+      if(sock->secure) {
+	if(sock->ssl_state == 1)
+	  return sm__sslAccept_h(sock);
+	else if(sock->ssl_state == 2)
+	  return sm__sslConnect_h(sock);
+	else if(sock->ssl_state == 3)
+	  return sm__sslRead_h(sock);
+	else if(sock->ssl_state == 4)
+	  return sm__sslWrite_h(sock);
+      } else {
+	while((rc = read(poll_fd->fd, rbuff, 4095)) > 0) {
+	  ret = sock->rh(sock, rbuff, rc);
+	  ASSERT(ret, "sock->rh");
+	}
+	if(rc == 0) {
+	  return sm__close_h(poll_fd);
+	} else if(rc < 0) {
+	  ASSERT((errno != EAGAIN) && (errno != EWOULDBLOCK), "read");
+	}
       }
     }
   }
@@ -756,14 +852,14 @@ sm__write_h(poll_fd_t poll_fd) {
       else if(sock->ssl_state == 4)
         return sm__sslWrite_h(sock);
     } else {
-      if(sock->scount == sock->sbuf->l) {
-        str_reset(sock->sbuf);
+      if(sock->scount == sock->rsb->l) {
+        str_reset(sock->rsb);
         sock->scount = 0;
         ret = poll_mod_fd(poll_fd, 0);
         ASSERT(ret, "poll_mod_fd");
         return 0;
       }
-      scnt = write(poll_fd->fd, sock->sbuf->v+sock->scount, sock->sbuf->l-sock->scount);
+      scnt = write(poll_fd->fd, sock->rsb->v+sock->scount, sock->rsb->l-sock->scount);
       if(scnt <= 0) {
         ASSERT((errno != EAGAIN) && (errno != EWOULDBLOCK) && (errno != EBADF),
                "socket write");
@@ -782,8 +878,8 @@ static int
 sm__sslWrite_h(sm_sock_t sock) {
   int ret, scnt;
 
-  if(sock->scount == sock->sbuf->l) {
-    str_reset(sock->sbuf);
+  if(sock->scount == sock->rsb->l) {
+    str_reset(sock->rsb);
     sock->scount = 0;
     ret = poll_mod_fd(sock->poll_fd, 0);
     ASSERT(ret, "poll_mod_fd");
@@ -791,7 +887,7 @@ sm__sslWrite_h(sm_sock_t sock) {
     return 0;
   }
 
-  scnt = SSL_write(sock->ssl, sock->sbuf->v+sock->scount, sock->sbuf->l-sock->scount);
+  scnt = SSL_write(sock->ssl, sock->rsb->v+sock->scount, sock->rsb->l-sock->scount);
   if(scnt > 0) {
     sock->scount += scnt;
   } else {
@@ -822,68 +918,9 @@ sm__close_h(poll_fd_t poll_fd) {
 
   sock = (sm_sock_t)poll_fd->ro;
 
-  /* shutdown(poll_fd->fd, 2); */
   close(poll_fd->fd);
 
-  if(sock->secure && sock->ssl_state) {
-    SSL_shutdown(sock->ssl);
-    SSL_free(sock->ssl);
-    sock->ssl = NULL;
-    sock->ssl_state = 0;
-  }
-
-  chs = wsocks->first;
-  while(chs) {
-    if(((sm_sock_t)chs->v) == sock) {
-      chain_remove_slot(wsocks, chs);
-      break;
-    }
-    chs = chs->next;
-  }
-
-  chs = tsocks->first;
-  while(chs) {
-    if(((sm_sock_t)chs->v) == sock) {
-      chain_remove_slot(tsocks, chs);
-      break;
-    }
-    chs = chs->next;
-  }
-
-  chs = csocks->first;
-  while(chs) {
-    if(((sm_sock_t)chs->v) == sock) {
-      chain_remove_slot(csocks, chs);
-      break;
-    }
-    chs = chs->next;
-  }
-
-  if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->autoconnect) {
-    SSL_CTX_free(sock->ssl_ctx);
-    sock->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
-    ASSERT(!sock->ssl_ctx, "SSL_CTX_new");
-
-    ret = poll_disable_fd(poll_fd);
-    ASSERT(ret, "poll_disable_fd");
-
-    if(sock->connected) {
-      sock->connected = 0;
-      ASSERT(!sock->eh, "sock->eh is null");
-      ret = sock->eh(sock);
-      ASSERT(ret, "sock->eh");
-    }
-
-    ret = chain_append(wsocks, OBJ(sock));
-    ASSERT(ret, "chain_append");
-
-    poll_fd->fd = -1;
-    time(&sock->lrctt);
-    sock->con_state = 2;
-    str_reset(sock->sbuf);
-  } else {
-    sock->connected = 0;
-
+  if(sock->type == SM_SOCK_TYPE_USERVER) {
     ret = poll_remove_fd(poll_fd);
     ASSERT(ret, "poll_remove_fd");
 
@@ -891,10 +928,81 @@ sm__close_h(poll_fd_t poll_fd) {
     ret = sock->eh(sock);
     ASSERT(ret, "sock->eh");
 
-    if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->secure)
-      SSL_CTX_free(sock->ssl_ctx);
-
     sm_sock_destroy(sock);
+  } else {
+    if(sock->secure && sock->ssl_state) {
+      SSL_shutdown(sock->ssl);
+      SSL_free(sock->ssl);
+      sock->ssl = NULL;
+      sock->ssl_state = 0;
+    }
+
+    chs = wsocks->first;
+    while(chs) {
+      if(((sm_sock_t)chs->v) == sock) {
+	chain_remove_slot(wsocks, chs);
+	break;
+      }
+      chs = chs->next;
+    }
+
+    chs = tsocks->first;
+    while(chs) {
+      if(((sm_sock_t)chs->v) == sock) {
+	chain_remove_slot(tsocks, chs);
+	break;
+      }
+      chs = chs->next;
+    }
+
+    chs = csocks->first;
+    while(chs) {
+      if(((sm_sock_t)chs->v) == sock) {
+	chain_remove_slot(csocks, chs);
+	break;
+      }
+      chs = chs->next;
+    }
+
+    if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->autoconnect) {
+      if(sock->secure) {
+	SSL_CTX_free(sock->ssl_ctx);
+	sock->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
+	ASSERT(!sock->ssl_ctx, "SSL_CTX_new");
+      }
+
+      ret = poll_disable_fd(poll_fd);
+      ASSERT(ret, "poll_disable_fd");
+
+      if(sock->connected) {
+	sock->connected = 0;
+	ASSERT(!sock->eh, "sock->eh is null");
+	ret = sock->eh(sock);
+	ASSERT(ret, "sock->eh");
+      }
+
+      ret = chain_append(wsocks, OBJ(sock));
+      ASSERT(ret, "chain_append");
+
+      poll_fd->fd = -1;
+      time(&sock->lrctt);
+      sock->con_state = 2;
+      str_reset(sock->rsb);
+    } else {
+      sock->connected = 0;
+
+      ret = poll_remove_fd(poll_fd);
+      ASSERT(ret, "poll_remove_fd");
+
+      ASSERT(!sock->eh, "sock->eh is null");
+      ret = sock->eh(sock);
+      ASSERT(ret, "sock->eh");
+
+      if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->secure)
+	SSL_CTX_free(sock->ssl_ctx);
+
+      sm_sock_destroy(sock);
+    }
   }
 
   return 0;
@@ -914,9 +1022,9 @@ sm_sock_new(sm_sock_type_e type) {
   sock->obj.type = OBJ_OBJECT;
   sock->type = type;
 
-  sock->sbuf = str_new();
-  ASSERT(!sock->sbuf, "str_new");
-  str_2_byte(sock->sbuf);
+  sock->rsb = str_new();
+  ASSERT(!sock->rsb, "str_new");
+  str_2_byte(sock->rsb);
 
   return sock;
  error:
@@ -926,7 +1034,7 @@ sm_sock_new(sm_sock_type_e type) {
 static void
 sm_sock_destroy(sm_sock_t sock) {
   if(sock) {
-    OBJ_DESTROY(sock->sbuf);
+    OBJ_DESTROY(sock->rsb);
     mem_free(sock_mc, sock, 0);
   }
 }

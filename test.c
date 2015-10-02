@@ -1,21 +1,21 @@
 #include "objtypes.h"
-#include "spm.h"
+#include "crypt.h"
 #include "trace.h"
 #include <unistd.h>
 #include <stdlib.h>
 #include <inttypes.h>
 
-#include <time.h>
-
 int
 main(int argc, char **argv) {
-  time_t now;
+  str_t str;
+  int ret;
 
-  time(&now);
+  str = str_new();
 
-  TRC("%jd\n", now);
+  ret = str_write_file(str, "out.txt");
+  ASSERT(ret, "str_write_file");
 
   return 0;
- /* error: */
- /*  return -1; */
+ error:
+  return -1;
 }

@@ -62,6 +62,9 @@ str_read_file(str_t str, char *fpath);
 int
 str_write_file(str_t str, char *fpath);
 
+int
+str_append_file(str_t str, char *fpath);
+
 void
 str_reset(str_t str);
 

@@ -70,7 +70,7 @@ httpp_feed(httpp_t psr, char *ch, uint32_t chs) {
   hmap_t pkt;
   str_t data, hdr;
   char *end, *ptr1, *ptr2, *ptr3, *ptr4;
-  int ret, tf;
+  int ret;
 
   data = psr->data;
   pkt = psr->pkt;
@@ -89,13 +89,12 @@ httpp_feed(httpp_t psr, char *ch, uint32_t chs) {
       while((ptr2 = strstr(ptr1, "\r\n"))) {
         *ptr2 = 0;
         if(ptr1 == data->v) { // first line
-          tf = strncmp(ptr1, "HTTP", 4) ? 1 : 0;
           ptr3 = ptr1;
           ptr4 = strstr(ptr3, " ");
           if(ptr4) {
             hdr = str_new_wv(ptr3, ptr4-ptr3);
             ASSERT(!hdr, "str_new_wv");
-            ret = hmap_set_val_ks(pkt, tf ? "method" : "version", OBJ(hdr));
+            ret = hmap_set_val_ks(pkt, "_h1_", OBJ(hdr));
             ASSERT(ret, "hmap_set_val_ks");
 
             ptr3 = ptr4 + 1;
@@ -103,13 +102,13 @@ httpp_feed(httpp_t psr, char *ch, uint32_t chs) {
             if(ptr4) {
               hdr = str_new_wv(ptr3, ptr4-ptr3);
               ASSERT(!hdr, "str_new_wv");
-              ret = hmap_set_val_ks(pkt, tf ? "url" : "statusc", OBJ(hdr));
+              ret = hmap_set_val_ks(pkt, "_h2_", OBJ(hdr));
               ASSERT(ret, "hmap_set_val_ks");
 
               ptr3 = ptr4 + 1;
               hdr = str_new_wv(ptr3, 0);
               ASSERT(!hdr, "str_new_wv");
-              ret = hmap_set_val_ks(pkt, tf ? "version" : "status", OBJ(hdr));
+              ret = hmap_set_val_ks(pkt, "_h3_", OBJ(hdr));
               ASSERT(ret, "hmap_set_val_ks");
             } else
               return 1;

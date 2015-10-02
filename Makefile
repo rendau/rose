@@ -60,7 +60,7 @@ $(TARGET_STAT): $(OBJECTS)
 	$(AR) rcs $@ $^
 
 test: test.o $(TARGET_DYN)
-	$(CC) -L. $< -o testlib -l$(TARGET)
+	$(CC) -L. -Wl,-rpath,. $< -o testlib -l$(TARGET)
 
 default: $(TARGET_DYN) $(TARGET_STAT)
 
@@ -74,8 +74,6 @@ release:
 	mkdir release/$(TARGET)
 	cp $(TARGET_DYN) release/$(TARGET)/
 	cp README release/$(TARGET)/
-	mkdir release/$(TARGET)/include
-	cp $(HEADERS) release/$(TARGET)/include
 
 clean:
 	rm -rf *.o *~ testlib
