@@ -753,12 +753,13 @@ sm__read_h(poll_fd_t poll_fd) {
   if(sock->type == SM_SOCK_TYPE_USERVER) {
     sl = silen;
     memset(&si1, 0, silen);
-    rc = recvfrom(sock->poll_fd->fd, sock->rsb->v, sock->rsb->s, 0,
-		  (struct sockaddr *)&si1, &sl);
-    ASSERT(rc<=0, "recvfrom ret=%d", rc);
-    ASSERT(!sock->udp_rh, "has not rh");
-    ret = sock->udp_rh(sock, (uint32_t)si1.sin_addr.s_addr, sock->rsb->v, rc);
-    ASSERT(ret, "rh");
+    while((rc = recvfrom(sock->poll_fd->fd, sock->rsb->v, sock->rsb->s, 0,
+                         (struct sockaddr *)&si1, &sl)) > 0) {
+      ASSERT(!sock->udp_rh, "has not rh");
+      ret = sock->udp_rh(sock, (uint32_t)si1.sin_addr.s_addr, sock->rsb->v, rc);
+      ASSERT(ret, "rh");
+    }
+    ASSERT((errno != EAGAIN) && (errno != EWOULDBLOCK), "recvfrom");
   } else {
     if(sock->con_state != 3) {
       if(sock->type == SM_SOCK_TYPE_SERVER)
