@@ -118,7 +118,6 @@ sm_iterp(time_t now) {
     chs2 = chs1->next;
     sock = (sm_sock_t)chs1->v;
     chain_remove_slot(csocks, chs1);
-    sock->autoconnect = 0;
     ret = sm__close_h(sock->poll_fd);
     ASSERT(ret, "sm__close_h");
     chs1 = chs2;
@@ -288,7 +287,7 @@ sm_connect(char *ip, int port, uint16_t rci) {
   sock->poll_fd->rh = sm__read_h;
   sock->poll_fd->wh = sm__write_h;
   sock->poll_fd->eh = sm__close_h;
-  sock->autoconnect = rci ? 1 : 0;
+  sock->reconnect = rci ? 1 : 0;
   sock->con_state = 2;
   sock->sa = inet_addr(ip);
   strcpy(sock->sas, ip);
@@ -399,7 +398,7 @@ sm_udp_send(uint32_t da, uint32_t dp, char *d, uint32_t ds) {
 }
 
 int
-sm_close(sm_sock_t sock) {
+sm_close(sm_sock_t sock, uint8_t reconnect) {
   int ret;
 
   if(sock->type == SM_SOCK_TYPE_USERVER) {
@@ -408,10 +407,12 @@ sm_close(sm_sock_t sock) {
     ASSERT(ret, "poll_remove_fd");
     sm_sock_destroy(sock);
   } else {
-    ASSERT(!sock->connected, "socket not connected");
-    sock->con_state = 3;
-    ret = chain_append(csocks, OBJ(sock));
-    ASSERT(ret, "chain_append");
+    sock->reconnect = reconnect;
+    if(sock->con_state != 3) {
+      sock->con_state = 3;
+      ret = chain_append(csocks, OBJ(sock));
+      ASSERT(ret, "chain_append");
+    }
   }
 
   return 0;
@@ -965,7 +966,7 @@ sm__close_h(poll_fd_t poll_fd) {
       chs = chs->next;
     }
 
-    if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->autoconnect) {
+    if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->reconnect) {
       if(sock->secure) {
 	SSL_CTX_free(sock->ssl_ctx);
 	sock->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
