@@ -30,7 +30,7 @@ struct sm_sock_st {
   poll_fd_t poll_fd;
   sm_sock_type_e type;
   uint8_t connected;
-  uint8_t autoconnect;
+  uint8_t reconnect;
   uint8_t con_state; // 0-established, 1-waitAccept, 2-waitConnect, 3-closing
   uint8_t secure;
   SSL_CTX *ssl_ctx;
@@ -83,6 +83,9 @@ sm_send(sm_sock_t sock, char *d, uint32_t ds);
 
 int
 sm_udp_send(uint32_t da, uint32_t dp, char *d, uint32_t ds);
+
+int
+sm_reconnect(sm_sock_t sock);
 
 int
 sm_close(sm_sock_t sock);

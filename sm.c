@@ -118,7 +118,6 @@ sm_iterp(time_t now) {
     chs2 = chs1->next;
     sock = (sm_sock_t)chs1->v;
     chain_remove_slot(csocks, chs1);
-    sock->autoconnect = 0;
     ret = sm__close_h(sock->poll_fd);
     ASSERT(ret, "sm__close_h");
     chs1 = chs2;
@@ -288,7 +287,7 @@ sm_connect(char *ip, int port, uint16_t rci) {
   sock->poll_fd->rh = sm__read_h;
   sock->poll_fd->wh = sm__write_h;
   sock->poll_fd->eh = sm__close_h;
-  sock->autoconnect = rci ? 1 : 0;
+  sock->reconnect = rci ? 1 : 0;
   sock->con_state = 2;
   sock->sa = inet_addr(ip);
   strcpy(sock->sas, ip);
@@ -399,6 +398,24 @@ sm_udp_send(uint32_t da, uint32_t dp, char *d, uint32_t ds) {
 }
 
 int
+sm_reconnect(sm_sock_t sock) {
+  int ret;
+
+  if(sock->type == SM_SOCK_TYPE_CONNECT) {
+    sock->reconnect = 1;
+    if(sock->con_state != 3) {
+      sock->con_state = 3;
+      ret = chain_append(csocks, OBJ(sock));
+      ASSERT(ret, "chain_append");
+    }
+  }
+
+  return 0;
+ error:
+  return -1;
+}
+
+int
 sm_close(sm_sock_t sock) {
   int ret;
 
@@ -408,10 +425,12 @@ sm_close(sm_sock_t sock) {
     ASSERT(ret, "poll_remove_fd");
     sm_sock_destroy(sock);
   } else {
-    ASSERT(!sock->connected, "socket not connected");
-    sock->con_state = 3;
-    ret = chain_append(csocks, OBJ(sock));
-    ASSERT(ret, "chain_append");
+    sock->reconnect = 0;
+    if(sock->con_state != 3) {
+      sock->con_state = 3;
+      ret = chain_append(csocks, OBJ(sock));
+      ASSERT(ret, "chain_append");
+    }
   }
 
   return 0;
@@ -753,12 +772,13 @@ sm__read_h(poll_fd_t poll_fd) {
   if(sock->type == SM_SOCK_TYPE_USERVER) {
     sl = silen;
     memset(&si1, 0, silen);
-    rc = recvfrom(sock->poll_fd->fd, sock->rsb->v, sock->rsb->s, 0,
-		  (struct sockaddr *)&si1, &sl);
-    ASSERT(rc<=0, "recvfrom ret=%d", rc);
-    ASSERT(!sock->udp_rh, "has not rh");
-    ret = sock->udp_rh(sock, (uint32_t)si1.sin_addr.s_addr, sock->rsb->v, rc);
-    ASSERT(ret, "rh");
+    while((rc = recvfrom(sock->poll_fd->fd, sock->rsb->v, sock->rsb->s, 0,
+                         (struct sockaddr *)&si1, &sl)) > 0) {
+      ASSERT(!sock->udp_rh, "has not rh");
+      ret = sock->udp_rh(sock, (uint32_t)si1.sin_addr.s_addr, sock->rsb->v, rc);
+      ASSERT(ret, "rh");
+    }
+    ASSERT((errno != EAGAIN) && (errno != EWOULDBLOCK), "recvfrom");
   } else {
     if(sock->con_state != 3) {
       if(sock->type == SM_SOCK_TYPE_SERVER)
@@ -964,7 +984,7 @@ sm__close_h(poll_fd_t poll_fd) {
       chs = chs->next;
     }
 
-    if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->autoconnect) {
+    if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->reconnect) {
       if(sock->secure) {
 	SSL_CTX_free(sock->ssl_ctx);
 	sock->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
