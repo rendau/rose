@@ -398,7 +398,25 @@ sm_udp_send(uint32_t da, uint32_t dp, char *d, uint32_t ds) {
 }
 
 int
-sm_close(sm_sock_t sock, uint8_t reconnect) {
+sm_reconnect(sm_sock_t sock) {
+  int ret;
+
+  if(sock->type == SM_SOCK_TYPE_CONNECT) {
+    sock->reconnect = 1;
+    if(sock->con_state != 3) {
+      sock->con_state = 3;
+      ret = chain_append(csocks, OBJ(sock));
+      ASSERT(ret, "chain_append");
+    }
+  }
+
+  return 0;
+ error:
+  return -1;
+}
+
+int
+sm_close(sm_sock_t sock) {
   int ret;
 
   if(sock->type == SM_SOCK_TYPE_USERVER) {
@@ -407,7 +425,7 @@ sm_close(sm_sock_t sock, uint8_t reconnect) {
     ASSERT(ret, "poll_remove_fd");
     sm_sock_destroy(sock);
   } else {
-    sock->reconnect = reconnect;
+    sock->reconnect = 0;
     if(sock->con_state != 3) {
       sock->con_state = 3;
       ret = chain_append(csocks, OBJ(sock));
