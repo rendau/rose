@@ -325,6 +325,30 @@ sm_sconnect(char *ip, int port, uint16_t rci) {
 }
 
 int
+sm_reconnect(sm_sock_t sock, char *ip, int port) {
+  int ret;
+
+  if(sock->type == SM_SOCK_TYPE_CONNECT) {
+    sock->reconnect = 1;
+    if(ip) {
+      sock->sa = inet_addr(ip);
+      strcpy(sock->sas, ip);
+    }
+    if(port)
+      sock->sp = port;
+    if(sock->con_state != 3) {
+      sock->con_state = 3;
+      ret = chain_append(csocks, OBJ(sock));
+      ASSERT(ret, "chain_append");
+    }
+  }
+
+  return 0;
+ error:
+  return -1;
+}
+
+int
 sm_set_cto(sm_sock_t sock, uint16_t cto) {
   chain_slot_t chs;
   int ret;
@@ -391,24 +415,6 @@ sm_udp_send(uint32_t da, uint32_t dp, char *d, uint32_t ds) {
 
   ret = sendto(udp_ssock, d, ds, 0, (struct sockaddr *)&si1, silen);
   ASSERT(ret!=ds, "sendto");
-
-  return 0;
- error:
-  return -1;
-}
-
-int
-sm_reconnect(sm_sock_t sock) {
-  int ret;
-
-  if(sock->type == SM_SOCK_TYPE_CONNECT) {
-    sock->reconnect = 1;
-    if(sock->con_state != 3) {
-      sock->con_state = 3;
-      ret = chain_append(csocks, OBJ(sock));
-      ASSERT(ret, "chain_append");
-    }
-  }
 
   return 0;
  error:
