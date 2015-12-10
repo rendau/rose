@@ -5,16 +5,23 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define POLL_ITERPS_SIZE 50
-#define POLL_SHOT_EVENTS_COUNT 1
-#define POLL_FD_CACHE_SIZE 30
+#define SHPL_SIZE 25
+#define OTPS_SIZE 25
+#define SHOT_EVENTS_COUNT 10
+#define FD_CACHE_SIZE 50
+
+struct shp_st {
+  poll_p_t p;
+  uint32_t freq;
+  time_t lct;
+};
 
 static uint8_t inited = 0;
 static int epfd = -1;
-struct epoll_event events[POLL_SHOT_EVENTS_COUNT];
-static poll_iterp_t iterps[POLL_ITERPS_SIZE];
-static uint16_t iterps_len = 0;
-static uint16_t fd_mc = 0;
+struct epoll_event events[SHOT_EVENTS_COUNT];
+static struct shp_st shpl[SHPL_SIZE]; // sheduled procedures list
+static poll_p_t otpl[OTPS_SIZE]; // one-time procedures list
+static uint16_t shpl_len, fd_mc;
 static time_t now;
 
 int
@@ -25,7 +32,7 @@ poll_init() {
 
     fd_mc = mem_new_ot("poll_fd",
 		       sizeof(struct poll_fd_st),
-		       POLL_FD_CACHE_SIZE, NULL);
+		       FD_CACHE_SIZE, NULL);
     ASSERT(!fd_mc, "mem_new_ot");
 
     inited = 1;
@@ -129,61 +136,84 @@ poll_disable_fd(poll_fd_t poll_fd) {
   return -1;
 }
 
-void
-poll_add_iterp(poll_iterp_t iterp) {
-  if(iterps_len == POLL_ITERPS_SIZE - 1) {
-    PERR("iterps-massive is full");
-    return;
-  }
-  iterps[iterps_len++] = iterp;
+int
+poll_add_shp(poll_p_t p, uint32_t freq) {
+  ASSERT(!p || !freq, "bad arguments");
+  ASSERT(shpl_len==SHPL_SIZE, "shpl-massive is full");
+
+  shpl[shpl_len].p = p;
+  shpl[shpl_len].freq = freq;
+  shpl[shpl_len].lct = time(NULL);
+
+  shpl_len++;
+
+  return 0;
+ error:
+  return -1;
 }
 
-void
-poll_remove_iterp(poll_iterp_t iterp) {
-  uint16_t i, j;
+int
+poll_add_otp(poll_p_t p) {
+  int i;
 
-  for(i=0; i<iterps_len; i++) {
-    if(iterps[i] == iterp)
+  ASSERT(!p, "bad arguments");
+
+  for(i=0; i<OTPS_SIZE; i++) {
+    if(!otpl[i])
       break;
   }
-  if(i < iterps_len) {
-    if(i < iterps_len - 1) {
-      for(j = i+1; j<iterps_len; j++)
-        iterps[j-1] = iterps[j];
-    }
-    iterps_len--;
-  }
+  ASSERT(i==OTPS_SIZE, "otpl-massive is full");
+
+  otpl[i] = p;
+
+  return 0;
+ error:
+  return -1;
 }
 
 int
 poll_run(int freq) {
   poll_fd_t poll_fd;
-  uint16_t i;
-  int j, evc, ret;
+  int i, j, evc, ret;
 
   time(&now);
 
-  for(i=0; i<iterps_len; i++) {
-    ret = iterps[i](now);
-    ASSERT(ret, "iterp");
+  for(i=0; i<shpl_len; i++) {
+    if((now - shpl[i].lct) >= shpl[i].freq) {
+      ret = shpl[i].p(now);
+      ASSERT(ret, "shp");
+      shpl[i].lct = now;
+      j = 0;
+      while(otpl[j]) {
+        ret = otpl[j](now);
+        ASSERT(ret, "otp");
+        otpl[j++] = NULL;
+      }
+    }
   }
 
-  evc = epoll_wait(epfd, events, POLL_SHOT_EVENTS_COUNT, freq);
+  evc = epoll_wait(epfd, events, SHOT_EVENTS_COUNT, freq);
   ASSERT(evc<0, "epoll_wait");
-  for(j=0; j<evc; j++) {
-    poll_fd = (poll_fd_t)events[j].data.ptr;
-    if(events[j].events & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
+  for(i=0; i<evc; i++) {
+    poll_fd = (poll_fd_t)events[i].data.ptr;
+    if(events[i].events & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
       ret = poll_fd->eh(poll_fd);
       ASSERT(ret, "poll_fd->eh");
-    } else if(events[j].events & EPOLLIN) {
+    } else if(events[i].events & EPOLLIN) {
       ret = poll_fd->rh(poll_fd);
       ASSERT(ret, "poll_fd->rh");
-    } else if(events[j].events & EPOLLOUT) {
+    } else if(events[i].events & EPOLLOUT) {
       ret = poll_fd->wh(poll_fd);
       ASSERT(ret, "poll_fd->wh");
     } else {
-      PWAR("undefined poll event %d\n", events[j].events);
+      PWAR("undefined poll event %d\n", events[i].events);
       goto error;
+    }
+    j = 0;
+    while(otpl[j]) {
+      ret = otpl[j](now);
+      ASSERT(ret, "otp");
+      otpl[j++] = NULL;
     }
   }
 

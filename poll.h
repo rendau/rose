@@ -8,7 +8,7 @@
 typedef struct poll_fd_st *poll_fd_t;
 
 typedef int (*poll_handler_t) (poll_fd_t poll_fd);
-typedef int (*poll_iterp_t) (time_t);
+typedef int (*poll_p_t) (time_t);
 
 struct poll_fd_st {
   struct obj_st obj;
@@ -42,11 +42,11 @@ poll_remove_fd(poll_fd_t poll_fd);
 int
 poll_disable_fd(poll_fd_t poll_fd);
 
-void
-poll_add_iterp(poll_iterp_t iterp);
+int
+poll_add_shp(poll_p_t p, uint32_t freq);
 
-void
-poll_remove_iterp(poll_iterp_t iterp);
+int
+poll_add_otp(poll_p_t p);
 
 int
 poll_run(int freq);

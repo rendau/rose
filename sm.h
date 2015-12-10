@@ -76,9 +76,6 @@ sm_sock_t
 sm_sconnect(char *ip, int port, uint16_t rci);
 
 int
-sm_reconnect(sm_sock_t sock, char *ip, int port);
-
-int
 sm_set_cto(sm_sock_t sock, uint16_t cto);
 
 int
@@ -86,6 +83,9 @@ sm_send(sm_sock_t sock, char *d, uint32_t ds);
 
 int
 sm_udp_send(uint32_t da, uint32_t dp, char *d, uint32_t ds);
+
+int
+sm_reconnect(sm_sock_t sock, char *ip, int port);
 
 int
 sm_close(sm_sock_t sock);
