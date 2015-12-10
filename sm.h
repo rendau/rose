@@ -85,7 +85,7 @@ int
 sm_udp_send(uint32_t da, uint32_t dp, char *d, uint32_t ds);
 
 int
-sm_reconnect(sm_sock_t sock);
+sm_reconnect(sm_sock_t sock, char *ip, int port);
 
 int
 sm_close(sm_sock_t sock);

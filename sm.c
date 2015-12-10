@@ -33,7 +33,8 @@ static struct sockaddr_in si1;
 static socklen_t silen = sizeof(struct sockaddr_in);
 
 static void sm_ssl_init();
-static int sm_iterp(time_t now);
+static int sm_shp(time_t now);
+static int sm_otp(time_t now);
 static int sm_set_fd_ka(int fd);
 static int sm__accept_h(poll_fd_t poll_fd);
 static int sm__sslAccept_h(sm_sock_t sock);
@@ -73,7 +74,7 @@ sm_init() {
 			 SM_SOCK_CACHE_SIZE, NULL);
     ASSERT(!sock_mc, "mem_new_ot");
 
-    poll_add_iterp(sm_iterp);
+    poll_add_shp(sm_shp, 2);
 
     inited = 1;
   }
@@ -94,7 +95,7 @@ sm_ssl_init() {
 }
 
 static int
-sm_iterp(time_t now) {
+sm_shp(time_t now) {
   sm_sock_t sock;
   chain_slot_t chs1, chs2;
   uint32_t da;
@@ -106,20 +107,9 @@ sm_iterp(time_t now) {
     sock = (sm_sock_t)chs1->v;
     ASSERT(!sock->connected, "not connected");
     if(now - sock->lat >= sock->cto) {
-      chain_remove_slot(tsocks, chs1);
       ret = sm__close_h(sock->poll_fd);
       ASSERT(ret, "sm__close_h");
     }
-    chs1 = chs2;
-  }
-
-  chs1 = csocks->first;
-  while(chs1) {
-    chs2 = chs1->next;
-    sock = (sm_sock_t)chs1->v;
-    chain_remove_slot(csocks, chs1);
-    ret = sm__close_h(sock->poll_fd);
-    ASSERT(ret, "sm__close_h");
     chs1 = chs2;
   }
 
@@ -162,6 +152,26 @@ sm_iterp(time_t now) {
         }
       }
     }
+    chs1 = chs2;
+  }
+
+  return 0;
+ error:
+  return -1;
+}
+
+static int
+sm_otp(time_t now) {
+  sm_sock_t sock;
+  chain_slot_t chs1, chs2;
+  int ret;
+
+  chs1 = csocks->first;
+  while(chs1) {
+    chs2 = chs1->next;
+    sock = (sm_sock_t)chs1->v;
+    ret = sm__close_h(sock->poll_fd);
+    ASSERT(ret, "sm__close_h");
     chs1 = chs2;
   }
 
@@ -398,15 +408,23 @@ sm_udp_send(uint32_t da, uint32_t dp, char *d, uint32_t ds) {
 }
 
 int
-sm_reconnect(sm_sock_t sock) {
+sm_reconnect(sm_sock_t sock, char *ip, int port) {
   int ret;
 
   if(sock->type == SM_SOCK_TYPE_CONNECT) {
     sock->reconnect = 1;
+    if(ip) {
+      sock->sa = inet_addr(ip);
+      strcpy(sock->sas, ip);
+    }
+    if(port)
+      sock->sp = port;
     if(sock->con_state != 3) {
       sock->con_state = 3;
       ret = chain_append(csocks, OBJ(sock));
       ASSERT(ret, "chain_append");
+      ret = poll_add_otp(sm_otp);
+      ASSERT(ret, "poll_add_otp");
     }
   }
 
@@ -430,6 +448,8 @@ sm_close(sm_sock_t sock) {
       sock->con_state = 3;
       ret = chain_append(csocks, OBJ(sock));
       ASSERT(ret, "chain_append");
+      ret = poll_add_otp(sm_otp);
+      ASSERT(ret, "poll_add_otp");
     }
   }
 
@@ -668,14 +688,6 @@ sm__connect_h(poll_fd_t poll_fd, int stop) {
 
   sock = (sm_sock_t)poll_fd->ro;
 
-  sock_chs = wsocks->first;
-  while(sock_chs) {
-    if(((sm_sock_t)sock_chs->v) == sock)
-      break;
-    sock_chs = sock_chs->next;
-  }
-  ASSERT(!sock_chs, "sock not in 'wsocks'");
-
   if(stop) {
     cfail = 1;
   } else {
@@ -688,6 +700,14 @@ sm__connect_h(poll_fd_t poll_fd, int stop) {
     ret = sm__close_h(sock->poll_fd);
     ASSERT(ret, "sm__close_h");
   } else {
+    sock_chs = wsocks->first;
+    while(sock_chs) {
+      if(((sm_sock_t)sock_chs->v) == sock)
+        break;
+      sock_chs = sock_chs->next;
+    }
+    ASSERT(!sock_chs, "sock not in 'wsocks'");
+
     chain_remove_slot(wsocks, sock_chs);
 
     ret = sm_set_fd_ka(poll_fd->fd);
