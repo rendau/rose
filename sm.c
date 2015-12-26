@@ -140,15 +140,17 @@ sm_shp(time_t now) {
 	  si1.sin_port = htons(sock->sp);
 
           ret = connect(newfd, (struct sockaddr *)&si1, silen);
-          ASSERT(ret && (errno != EINPROGRESS), "connect");
+	  if(ret && (errno != EINPROGRESS)) {
+	    close(newfd);
+	  } else {
+	    sock->poll_fd->fd = newfd;
 
-          sock->poll_fd->fd = newfd;
+	    ret = poll_enable_fd(sock->poll_fd);
+	    ASSERT(ret, "poll_enable_fd");
 
-          ret = poll_enable_fd(sock->poll_fd);
-          ASSERT(ret, "poll_enable_fd");
-
-          ret = poll_mod_fd(sock->poll_fd, 1);
-          ASSERT(ret, "poll_mod_fd");
+	    ret = poll_mod_fd(sock->poll_fd, 1);
+	    ASSERT(ret, "poll_mod_fd");
+	  }
         }
       }
     }
