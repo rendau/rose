@@ -140,15 +140,17 @@ sm_shp(time_t now) {
 	  si1.sin_port = htons(sock->sp);
 
           ret = connect(newfd, (struct sockaddr *)&si1, silen);
-          ASSERT(ret && (errno != EINPROGRESS), "connect");
+	  if(ret && (errno != EINPROGRESS)) {
+	    close(newfd);
+	  } else {
+	    sock->poll_fd->fd = newfd;
 
-          sock->poll_fd->fd = newfd;
+	    ret = poll_enable_fd(sock->poll_fd);
+	    ASSERT(ret, "poll_enable_fd");
 
-          ret = poll_enable_fd(sock->poll_fd);
-          ASSERT(ret, "poll_enable_fd");
-
-          ret = poll_mod_fd(sock->poll_fd, 1);
-          ASSERT(ret, "poll_mod_fd");
+	    ret = poll_mod_fd(sock->poll_fd, 1);
+	    ASSERT(ret, "poll_mod_fd");
+	  }
         }
       }
     }
@@ -627,6 +629,7 @@ sm__accept_h(poll_fd_t poll_fd) {
       ASSERT(!csock->ssl, "SSL_new");
       ret = SSL_set_fd(csock->ssl, newfd);
       ASSERT(!ret, "SSL_set_fd");
+      SSL_set_accept_state(csock->ssl);
       csock->ssl_state = 1;
       csock->ch = sock->ch;
       ret = sm__sslAccept_h(csock);
@@ -662,7 +665,7 @@ sm__sslAccept_h(sm_sock_t sock) {
       ret = poll_mod_fd(sock->poll_fd, 1);
       ASSERT(ret, "poll_mod_fd");
     } else {
-      /* PWAR("SSL_accept: %s\n", ERR_error_string(ret, NULL)); */
+      PWAR("SSL_accept: %s\n", ERR_error_string(ret, NULL));
       return sm__close_h(sock->poll_fd);
     }
   } else {
@@ -731,6 +734,7 @@ sm__connect_h(poll_fd_t poll_fd, int stop) {
       ASSERT(!sock->ssl, "SSL_new");
       ret = SSL_set_fd(sock->ssl, poll_fd->fd);
       ASSERT(!ret, "SSL_set_fd");
+      SSL_set_connect_state(sock->ssl);
       sock->ssl_state = 2;
       ret = sm__sslConnect_h(sock);
       ASSERT(ret, "sm__sslAccept_h");
@@ -763,7 +767,7 @@ sm__sslConnect_h(sm_sock_t sock) {
       ret = poll_mod_fd(sock->poll_fd, 1);
       ASSERT(ret, "poll_mod_fd");
     } else {
-      /* PWAR("SSL_connect: %s\n", ERR_error_string(ret, NULL)); */
+      PWAR("SSL_connect: %s\n", ERR_error_string(ret, NULL));
       return sm__close_h(sock->poll_fd);
     }
   } else {
@@ -854,8 +858,7 @@ sm__sslRead_h(sm_sock_t sock) {
       ret = poll_mod_fd(sock->poll_fd, 1);
       ASSERT(ret, "poll_mod_fd");
     } else if(ret != SSL_ERROR_WANT_READ) {
-      /* PWAR("SSL_read:\n"); */
-      /* PWAR("\t%d %s\n", ret, ERR_error_string(ret, NULL)); */
+      PWAR("SSL_read: %d %s\n", ret, ERR_error_string(ret, NULL));
       /* while((ret = ERR_get_error())) { */
       /*   PWAR("\t%d %s\n", ret, ERR_error_string(ret, NULL)); */
       /* } */
@@ -936,8 +939,7 @@ sm__sslWrite_h(sm_sock_t sock) {
       ret = poll_mod_fd(sock->poll_fd, 0);
       ASSERT(ret, "poll_mod_fd");
     } else if(ret != SSL_ERROR_WANT_WRITE) {
-      PWAR("SSL_write:\n");
-      PWAR("\t%d %s\n", ret, ERR_error_string(ret, NULL));
+      PWAR("SSL_write: %d %s\n", ret, ERR_error_string(ret, NULL));
       while((ret = ERR_get_error())) {
         PWAR("\t%d %s\n", ret, ERR_error_string(ret, NULL));
       }
