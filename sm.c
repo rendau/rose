@@ -87,8 +87,8 @@ sm_init() {
 static void
 sm_ssl_init() {
   if(!ssl_inited) {
-    SSL_load_error_strings();
     SSL_library_init();
+    SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
     ssl_inited = 1;
   }
@@ -328,6 +328,8 @@ sm_sconnect(char *ip, int port, uint16_t rci) {
 
   sock->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
   ASSERT(!sock->ssl_ctx, "SSL_CTX_new");
+
+  // SSL_CTX_set_verify(sock->ssl_ctx, SSL_VERIFY_NONE, NULL);
 
   sock->ssl = NULL;
 
@@ -859,9 +861,9 @@ sm__sslRead_h(sm_sock_t sock) {
       ASSERT(ret, "poll_mod_fd");
     } else if(ret != SSL_ERROR_WANT_READ) {
       PWAR("SSL_read: %d %s\n", ret, ERR_error_string(ret, NULL));
-      /* while((ret = ERR_get_error())) { */
-      /*   PWAR("\t%d %s\n", ret, ERR_error_string(ret, NULL)); */
-      /* } */
+      while((ret = ERR_get_error())) {
+        PWAR("\t%d %s\n", ret, ERR_error_string(ret, NULL));
+      }
       return sm__close_h(sock->poll_fd);
     }
   }
