@@ -5,8 +5,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define SHPL_SIZE 25
-#define OTPS_SIZE 25
+#define SHPL_SIZE 50
+#define OTPS_SIZE 50
 #define SHOT_EVENTS_COUNT 10
 #define FD_CACHE_SIZE 50
 
