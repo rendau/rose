@@ -481,14 +481,10 @@ sm_get_na4dn(char *dn) {
   hints.ai_flags = AI_PASSIVE;
 
   ret = getaddrinfo(dn, NULL, &hints, &ai);
-  ASSERT(ret, "getaddrinfo");
-
-  if(ai)
-    res = ((struct sockaddr_in *)ai->ai_addr)->sin_addr.s_addr;
+  if(!ret && ai)
+      res = ((struct sockaddr_in *)ai->ai_addr)->sin_addr.s_addr;
 
   return res;
- error:
-  return 0;
 }
 
 char *
@@ -860,10 +856,10 @@ sm__sslRead_h(sm_sock_t sock) {
       ret = poll_mod_fd(sock->poll_fd, 1);
       ASSERT(ret, "poll_mod_fd");
     } else if(ret != SSL_ERROR_WANT_READ) {
-      PWAR("SSL_read: %d %s\n", ret, ERR_error_string(ret, NULL));
-      while((ret = ERR_get_error())) {
-        PWAR("\t%d %s\n", ret, ERR_error_string(ret, NULL));
-      }
+      /* PWAR("SSL_read: %d %s\n", ret, ERR_error_string(ret, NULL)); */
+      /* while((ret = ERR_get_error())) { */
+      /*   PWAR("\t%d %s\n", ret, ERR_error_string(ret, NULL)); */
+      /* } */
       return sm__close_h(sock->poll_fd);
     }
   }
@@ -941,11 +937,12 @@ sm__sslWrite_h(sm_sock_t sock) {
       ret = poll_mod_fd(sock->poll_fd, 0);
       ASSERT(ret, "poll_mod_fd");
     } else if(ret != SSL_ERROR_WANT_WRITE) {
-      PWAR("SSL_write: %d %s\n", ret, ERR_error_string(ret, NULL));
-      while((ret = ERR_get_error())) {
-        PWAR("\t%d %s\n", ret, ERR_error_string(ret, NULL));
-      }
-      goto error;
+      /* PWAR("SSL_write: %d %s\n", ret, ERR_error_string(ret, NULL)); */
+      /* while((ret = ERR_get_error())) { */
+      /*   PWAR("\t%d %s\n", ret, ERR_error_string(ret, NULL)); */
+      /* } */
+      /* goto error; */
+      return sm__close_h(sock->poll_fd);
     }
   }
 
