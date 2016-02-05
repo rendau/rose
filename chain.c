@@ -172,6 +172,24 @@ chain_remove_slot(chain_t chain, chain_slot_t slot) {
   return res;
 }
 
+obj_t
+chain_remove_slot_by_val(chain_t chain, obj_t v) {
+  chain_slot_t slot;
+  obj_t res;
+
+  res = NULL;
+  slot = chain->first;
+  while(slot) {
+    if(slot->v == v) {
+      res = chain_remove_slot(chain, slot);
+      break;
+    }
+    slot = slot->next;
+  }
+
+  return res;
+}
+
 void
 chain_reset(chain_t chain) {
   chain_slot_t slot;

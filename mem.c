@@ -93,11 +93,18 @@ void
 mem_check() {
   ot_t ot;
   uint16_t i;
+  char f;
 
+  f = 1;
   for(i=1; i<ots_len; i++) {
     ot = ots[i];
     if(ot->ac - ot->floor) {
-      PWAR("%d objects of '%s' type was not freed\n", ot->ac - ot->floor, ot->name);
+      if(f) {
+	PWAR("memcheck:\n");
+	f = 0;
+      }
+      PWAR("\t%d objects of '%s' type was not freed\n", ot->ac - ot->floor, ot->name);
     }
   }
+  TR("\n");
 }

@@ -954,7 +954,6 @@ sm__sslWrite_h(sm_sock_t sock) {
 static int
 sm__close_h(poll_fd_t poll_fd) {
   sm_sock_t sock;
-  chain_slot_t chs;
   int ret;
 
   sock = (sm_sock_t)poll_fd->ro;
@@ -978,32 +977,9 @@ sm__close_h(poll_fd_t poll_fd) {
       sock->ssl_state = 0;
     }
 
-    chs = wsocks->first;
-    while(chs) {
-      if(((sm_sock_t)chs->v) == sock) {
-	chain_remove_slot(wsocks, chs);
-	break;
-      }
-      chs = chs->next;
-    }
-
-    chs = tsocks->first;
-    while(chs) {
-      if(((sm_sock_t)chs->v) == sock) {
-	chain_remove_slot(tsocks, chs);
-	break;
-      }
-      chs = chs->next;
-    }
-
-    chs = csocks->first;
-    while(chs) {
-      if(((sm_sock_t)chs->v) == sock) {
-	chain_remove_slot(csocks, chs);
-	break;
-      }
-      chs = chs->next;
-    }
+    chain_remove_slot_by_val(wsocks, OBJ(sock));
+    chain_remove_slot_by_val(tsocks, OBJ(sock));
+    chain_remove_slot_by_val(csocks, OBJ(sock));
 
     if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->reconnect) {
       if(sock->secure) {

@@ -48,6 +48,9 @@ chain_append_str(chain_t chain, char *val);
 obj_t
 chain_remove_slot(chain_t chain, chain_slot_t slot);
 
+obj_t
+chain_remove_slot_by_val(chain_t chain, obj_t v);
+
 void
 chain_reset(chain_t chain);
 

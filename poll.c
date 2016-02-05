@@ -138,14 +138,25 @@ poll_disable_fd(poll_fd_t poll_fd) {
 
 int
 poll_add_shp(poll_p_t p, uint32_t freq) {
+  unsigned char i;
+
   ASSERT(!p || !freq, "bad arguments");
-  ASSERT(shpl_len==SHPL_SIZE, "shpl-massive is full");
+  ASSERT(shpl_len==SHPL_SIZE, "shpl-array is full");
 
-  shpl[shpl_len].p = p;
-  shpl[shpl_len].freq = freq;
-  shpl[shpl_len].lct = time(NULL);
+  for(i=0; i<shpl_len; i++) {
+    if(shpl[i].p == p)
+      break;
+  }
 
-  shpl_len++;
+  if(i == shpl_len) {
+    shpl[shpl_len].p = p;
+    shpl[shpl_len].freq = freq;
+    shpl[shpl_len].lct = time(NULL);
+    shpl_len++;
+  } else {
+    shpl[i].freq = freq;
+    shpl[i].lct = time(NULL);
+  }
 
   return 0;
  error:
@@ -154,15 +165,15 @@ poll_add_shp(poll_p_t p, uint32_t freq) {
 
 int
 poll_add_otp(poll_p_t p) {
-  int i;
+  unsigned char i;
 
   ASSERT(!p, "bad arguments");
 
   for(i=0; i<OTPS_SIZE; i++) {
-    if(!otpl[i])
+    if(!otpl[i] || (otpl[i] == p))
       break;
   }
-  ASSERT(i==OTPS_SIZE, "otpl-massive is full");
+  ASSERT(i==OTPS_SIZE, "otpl-array is full");
 
   otpl[i] = p;
 
@@ -193,7 +204,7 @@ poll_run(int freq) {
   }
 
   evc = epoll_wait(epfd, events, SHOT_EVENTS_COUNT, freq);
-  ASSERT(evc<0, "epoll_wait");
+  ASSERT((evc<0) && (errno!=EINTR), "epoll_wait");
   for(i=0; i<evc; i++) {
     poll_fd = (poll_fd_t)events[i].data.ptr;
     if(events[i].events & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
