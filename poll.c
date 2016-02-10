@@ -24,6 +24,8 @@ static poll_p_t otpl[OTPS_SIZE]; // one-time procedures list
 static uint16_t shpl_len, fd_mc;
 static time_t now;
 
+static int exec_otps();
+
 int
 poll_init() {
   if(!inited) {
@@ -182,10 +184,26 @@ poll_add_otp(poll_p_t p) {
   return -1;
 }
 
+static int
+exec_otps() {
+  int ret, i;
+
+  i = 0;
+  while(otpl[i]) {
+    ret = otpl[i](now);
+    ASSERT(ret, "otp");
+    otpl[i++] = NULL;
+  }
+
+  return 0;
+ error:
+  return -1;
+}
+
 int
 poll_run(int freq) {
   poll_fd_t poll_fd;
-  int i, j, evc, ret;
+  int i, evc, ret;
 
   time(&now);
 
@@ -194,37 +212,34 @@ poll_run(int freq) {
       ret = shpl[i].p(now);
       ASSERT(ret, "shp");
       shpl[i].lct = now;
-      j = 0;
-      while(otpl[j]) {
-        ret = otpl[j](now);
-        ASSERT(ret, "otp");
-        otpl[j++] = NULL;
-      }
+      ret = exec_otps();
+      ASSERT(ret, "exec_otps");
     }
   }
 
   evc = epoll_wait(epfd, events, SHOT_EVENTS_COUNT, freq);
-  ASSERT((evc<0) && (errno!=EINTR), "epoll_wait");
-  for(i=0; i<evc; i++) {
-    poll_fd = (poll_fd_t)events[i].data.ptr;
-    if(events[i].events & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
-      ret = poll_fd->eh(poll_fd);
-      ASSERT(ret, "poll_fd->eh");
-    } else if(events[i].events & EPOLLIN) {
-      ret = poll_fd->rh(poll_fd);
-      ASSERT(ret, "poll_fd->rh");
-    } else if(events[i].events & EPOLLOUT) {
-      ret = poll_fd->wh(poll_fd);
-      ASSERT(ret, "poll_fd->wh");
-    } else {
-      PWAR("undefined poll event %d\n", events[i].events);
-      goto error;
-    }
-    j = 0;
-    while(otpl[j]) {
-      ret = otpl[j](now);
-      ASSERT(ret, "otp");
-      otpl[j++] = NULL;
+  if(evc < 0) {
+    ASSERT(errno!=EINTR, "epoll_wait");
+    ret = exec_otps();
+    ASSERT(ret, "exec_otps");
+  } else {
+    for(i=0; i<evc; i++) {
+      poll_fd = (poll_fd_t)events[i].data.ptr;
+      if(events[i].events & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
+	ret = poll_fd->eh(poll_fd);
+	ASSERT(ret, "poll_fd->eh");
+      } else if(events[i].events & EPOLLIN) {
+	ret = poll_fd->rh(poll_fd);
+	ASSERT(ret, "poll_fd->rh");
+      } else if(events[i].events & EPOLLOUT) {
+	ret = poll_fd->wh(poll_fd);
+	ASSERT(ret, "poll_fd->wh");
+      } else {
+	PWAR("undefined poll event %d\n", events[i].events);
+	goto error;
+      }
+      ret = exec_otps();
+      ASSERT(ret, "exec_otps");
     }
   }
 
