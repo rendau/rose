@@ -63,6 +63,7 @@ test: test.o $(TARGET_DYN)
 	$(CC) -L. -Wl,-rpath,. $< -o testlib -l$(TARGET)
 
 default: $(TARGET_DYN) $(TARGET_STAT)
+	echo "rose_LFLAGS = ${LFLAGS}\nrose_LIBS = ${LIBS}" > lflags.mk
 
 all: default test
 
@@ -81,4 +82,5 @@ clean:
 
 distclean:
 	make clean
+	rm lflags.mk
 	rm -rf *.a *.so
