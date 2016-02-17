@@ -7,6 +7,7 @@
 #include <openssl/ssl.h>
 
 #define SM_MAC_LEN 6
+#define SM_RB_SIZE 2048
 
 typedef struct sm_sock_st *sm_sock_t;
 
@@ -36,6 +37,7 @@ struct sm_sock_st {
   SSL_CTX *ssl_ctx;
   SSL *ssl;
   uint8_t ssl_state; // 0-new, 1-accept, 2-connect, 3-read, 4-write
+  uint8_t ssl_nego; // 0-no, 1-yes
   uint16_t ceto; // connection establishing timeout
   uint16_t rci; // reconnection interval
   time_t lrctt; // last connect-try time
@@ -48,7 +50,9 @@ struct sm_sock_st {
   uint32_t sp; // server port
   char sas[17]; // server address in string
   str_t rsb;
-  uint32_t scount;
+  uint32_t sent_count;
+  uint32_t sending_count;
+  char rb[SM_RB_SIZE+1];
   void *ro;
   sm_cc_handler_t ch;
   sm_r_handler_t rh;
