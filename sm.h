@@ -6,7 +6,6 @@
 #include <time.h>
 #include <openssl/ssl.h>
 
-#define SM_MAC_LEN 6
 #define SM_RB_SIZE 2048
 
 typedef struct sm_sock_st *sm_sock_t;
@@ -110,7 +109,7 @@ void
 sm_set_fd_b(int fd);
 
 int
-sm_get_fd_mac(sm_sock_t sock, char *dev, unsigned char **res);
+sm_get_fd_mac(sm_sock_t sock, char *dev, uint64_t *res);
 
 int
 sm_generate_clients_uid(sm_sock_t sock, str_t dst);

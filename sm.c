@@ -1,6 +1,7 @@
 #include "sm.h"
 #include "mem.h"
 #include "objtypes.h"
+#include "ns.h"
 #include "poll.h"
 #include "trace.h"
 #include <stdlib.h>
@@ -28,7 +29,7 @@ static uint8_t ssl_inited = 0;
 static chain_t wsocks, tsocks, csocks;
 static int udp_ssock;
 static uint16_t sock_mc = 0;
-static unsigned char _mac[SM_MAC_LEN];
+/* static unsigned char _mac[SM_MAC_LEN]; */
 static struct sockaddr_in si1;
 static socklen_t silen = sizeof(struct sockaddr_in);
 
@@ -541,12 +542,12 @@ sm_set_fd_ka(int fd) {
 }
 
 int
-sm_get_fd_mac(sm_sock_t sock, char *dev, unsigned char **res) {
+sm_get_fd_mac(sm_sock_t sock, char *dev, uint64_t *res) {
   struct arpreq ar;
-  unsigned char *ptr;
+  uint8_t *ptr, mac[8];
   int ret;
 
-  *res = _mac;
+  *res = 0;
 
   memset(&ar, 0, sizeof(struct arpreq));
   ((struct sockaddr_in *) &ar.arp_pa)->sin_family = AF_INET;
@@ -557,11 +558,11 @@ sm_get_fd_mac(sm_sock_t sock, char *dev, unsigned char **res) {
   ret = ioctl(sock->poll_fd->fd, SIOCGARP, &ar);
   ASSERT((ret<0)&&(errno!=ENODEV)&&(errno!=ENXIO), "ioctl");
   if(ret < 0) {
-    memset(_mac, 0, SM_MAC_LEN);
     return 1;
   } else {
     ptr = (unsigned char *)ar.arp_ha.sa_data;
-    memcpy(_mac, ptr, SM_MAC_LEN);
+    memcpy(mac+2, ptr, 6);
+    *res = ns_csu64(*((uint64_t *)mac));
   }
 
   return 0;
@@ -849,7 +850,7 @@ sm__sslRead_h(sm_sock_t sock) {
   } else if(rc < 0) {
     ret = SSL_get_error(sock->ssl, rc);
     if(ret == SSL_ERROR_WANT_WRITE) {
-      TR("---want-write on reading\n");
+      /* TR("---want-write on reading\n"); */
       sock->ssl_nego = 1;
       ret = poll_mod_fd(sock->poll_fd, 1);
       ASSERT(ret, "poll_mod_fd");
@@ -947,7 +948,7 @@ sm__sslWrite_h(sm_sock_t sock) {
   } else {
     ret = SSL_get_error(sock->ssl, scnt);
     if(ret == SSL_ERROR_WANT_READ) {
-      TR("---want-read on writing\n");
+      /* TR("---want-read on writing\n"); */
       sock->ssl_nego = 1;
       ret = poll_mod_fd(sock->poll_fd, 0);
       ASSERT(ret, "poll_mod_fd");
