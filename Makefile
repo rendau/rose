@@ -20,6 +20,7 @@ CFILES = ns.c mem.c spm.c bool.c int.c float.c str.c \
 	wsp.c stz.c eh.c thm.c
 
 MAKEARGS = 
+MKNAME = lflags
 
 ifeq ($(arch),mips)
 ifdef dir
@@ -33,6 +34,7 @@ AR = $(BINDIR)/mips-openwrt-linux-ar
 IFLAGS += -I$(ENVDIR)/usr/include
 LFLAGS += -L$(ENVDIR)/usr/lib
 MAKEARGS += arch=mips dir=$(dir)
+MKNAME := $(MKNAME)_mips
 endif
 endif
 
@@ -63,7 +65,7 @@ test: test.o $(TARGET_DYN)
 	$(CC) -L. -Wl,-rpath,. $< -o testlib -l$(TARGET)
 
 default: $(TARGET_DYN) $(TARGET_STAT)
-	echo "rose_LFLAGS = ${LFLAGS}\nrose_LIBS = ${LIBS}" > lflags.mk
+	echo "rose_LFLAGS = ${LFLAGS}\nrose_LIBS = ${LIBS}" > $(MKNAME).mk
 
 all: default test
 
@@ -82,5 +84,4 @@ clean:
 
 distclean:
 	make clean
-	rm lflags.mk
-	rm -rf *.a *.so
+	rm -rf *.a *.so *.mk

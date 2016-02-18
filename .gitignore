@@ -2,7 +2,7 @@
 *.so
 *.a
 *.log
+*.mk
 *~
 release/*
-lflags.mk
 testlib
