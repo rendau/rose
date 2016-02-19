@@ -5,7 +5,7 @@ typedef int (*thm_jft_t) (void *arg, void *ro, void **result);
 typedef int (*thm_rft_t) (void *ro, void *arg, void *result);
 
 int
-thm_init(unsigned char len, void *_cacb);
+thm_init(unsigned char len);
 
 char
 thm_is_inited();

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <signal.h>
 
 typedef struct tctx_st *tctx_t;
 typedef struct job_st *job_t;
@@ -28,10 +29,9 @@ struct job_st {
   void *res;
 };
 
-static char inited = 0;
-static void (*_cacb)(char);
-static uint16_t tctx_mc = 0;
-static uint16_t job_mc = 0;
+static char inited;
+static uint16_t tctx_mc;
+static uint16_t job_mc;
 static chain_t _thl;
 static chain_t _jl;
 
@@ -43,7 +43,7 @@ static job_t job_new();
 static void job_destroy(job_t job);
 
 int
-thm_init(unsigned char len, void *cacb) {
+thm_init(unsigned char len) {
   tctx_t tctx;
   poll_fd_t poll_fd;
   unsigned char i;
@@ -53,7 +53,7 @@ thm_init(unsigned char len, void *cacb) {
   ASSERT(!len, "bad len");
 
   if(!inited) {
-    _cacb = cacb;
+    inited = 1;
 
     ret = poll_init();
     ASSERT(ret, "poll_init");
@@ -78,7 +78,6 @@ thm_init(unsigned char len, void *cacb) {
       tctx = mem_alloc(tctx_mc);
       ASSERT(!tctx, "mem_alloc");
 
-      tctx->obj.type = OBJ_OBJECT;
       tctx->id = i+1;
 
       ret = pipe(tctx->p1);
@@ -97,8 +96,6 @@ thm_init(unsigned char len, void *cacb) {
       ret = chain_append(_thl, OBJ(tctx));
       ASSERT(ret, "chain_append");
     }
-
-    inited = 1;
   }
 
   return 0;
@@ -152,9 +149,6 @@ thm_addJob(void *ro, thm_jft_t jf, void *jarg, thm_rft_t rf) {
     ASSERT(ret, "chain_append");
   }
 
-  if(_cacb)
-    _cacb(1);
-
   return 0;
  error:
   return -1;
@@ -172,7 +166,7 @@ _thread_routine(void *arg) {
   while(1) {
     ret = read(ctx->p1[0], &byte, 1);
     ASSERT(ret<0, "read");
-    if(ret) {
+    if(ret > 0) {
       ASSERT(!ctx->job, "has not job");
       job = ctx->job;
       job->res = NULL;
@@ -208,8 +202,6 @@ _th_read_h(poll_fd_t poll_fd) {
     ret = job->rf(job->ro, job->ja, job->res);
     ASSERT(ret, "result_fun()");
     job_destroy(job);
-    if(_cacb)
-      _cacb(-1);
     if(_jl->first) {
       job = (job_t)chain_remove_slot(_jl, _jl->first);
       tctx->job = job;
@@ -225,12 +217,12 @@ _th_read_h(poll_fd_t poll_fd) {
 
 static int
 _th_write_h(poll_fd_t poll_fd) {
-  return -1;
+  return 0;
 }
 
 static int
 _th_close_h(poll_fd_t poll_fd) {
-  return -1;
+  return 0;
 }
 
 static job_t
