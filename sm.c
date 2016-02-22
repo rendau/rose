@@ -562,7 +562,7 @@ sm_get_fd_mac(sm_sock_t sock, char *dev, uint64_t *res) {
   } else {
     ptr = (unsigned char *)ar.arp_ha.sa_data;
     memcpy(mac+2, ptr, 6);
-    *res = ns_csu64(*((uint64_t *)mac));
+    *res = *((uint64_t *)mac);
   }
 
   return 0;
