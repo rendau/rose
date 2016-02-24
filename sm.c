@@ -453,7 +453,8 @@ sm_close(sm_sock_t sock) {
     ASSERT(ret, "poll_remove_fd");
     sm_sock_destroy(sock);
   } else {
-    sock->reconnect = 0;
+    if(sock->type == SM_SOCK_TYPE_CONNECT)
+      sock->reconnect = 0;
     if(sock->con_state != 3) {
       sock->con_state = 3;
       ret = chain_append(csocks, OBJ(sock));
@@ -986,11 +987,16 @@ sm__close_h(poll_fd_t poll_fd) {
 
     sm_sock_destroy(sock);
   } else {
-    if(sock->secure && sock->ssl_state) {
-      SSL_shutdown(sock->ssl);
-      SSL_free(sock->ssl);
-      sock->ssl = NULL;
-      sock->ssl_state = 0;
+    if(sock->secure) {
+      if(sock->ssl_state) {
+	SSL_shutdown(sock->ssl);
+	SSL_free(sock->ssl);
+	sock->ssl = NULL;
+	sock->ssl_state = 0;
+      }
+      if((sock->type == SM_SOCK_TYPE_CONNECT) ||
+	 (sock->type == SM_SOCK_TYPE_SERVER))
+	SSL_CTX_free(sock->ssl_ctx);
     }
 
     chain_remove_slot_by_val(wsocks, OBJ(sock));
@@ -999,7 +1005,6 @@ sm__close_h(poll_fd_t poll_fd) {
 
     if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->reconnect) {
       if(sock->secure) {
-	SSL_CTX_free(sock->ssl_ctx);
 	sock->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
 	ASSERT(!sock->ssl_ctx, "SSL_CTX_new");
       }
@@ -1032,9 +1037,6 @@ sm__close_h(poll_fd_t poll_fd) {
       ASSERT(!sock->eh, "sock->eh is null");
       ret = sock->eh(sock);
       ASSERT(ret, "sock->eh");
-
-      if((sock->type == SM_SOCK_TYPE_CONNECT) && sock->secure)
-	SSL_CTX_free(sock->ssl_ctx);
 
       sm_sock_destroy(sock);
     }
