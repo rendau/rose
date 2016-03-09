@@ -166,16 +166,12 @@ sm_shp(time_t now) {
 static int
 sm_otp(time_t now) {
   sm_sock_t sock;
-  chain_slot_t chs1, chs2;
   int ret;
 
-  chs1 = csocks->first;
-  while(chs1) {
-    chs2 = chs1->next;
-    sock = (sm_sock_t)chs1->v;
+  while(csocks->first) {
+    sock = (sm_sock_t)csocks->first->v;
     ret = sm__close_h(sock->poll_fd);
     ASSERT(ret, "sm__close_h");
-    chs1 = chs2;
   }
 
   return 0;

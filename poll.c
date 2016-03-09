@@ -7,7 +7,7 @@
 
 #define SHPL_SIZE 50
 #define OTPS_SIZE 50
-#define SHOT_EVENTS_COUNT 10
+#define SHOT_EVENTS_COUNT 1
 #define FD_CACHE_SIZE 50
 
 struct shp_st {
@@ -192,8 +192,11 @@ exec_otps() {
   while(otpl[i]) {
     ret = otpl[i](now);
     ASSERT(ret, "otp");
-    otpl[i++] = NULL;
+    i++;
   }
+
+  while(i)
+    otpl[--i] = NULL;
 
   return 0;
  error:

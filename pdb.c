@@ -330,6 +330,7 @@ pdb_res_destroy(pdb_res_t res) {
   if(res) {
     if(res->r)
       PQclear((PGresult *)res->r);
+    memset(res, 0, sizeof(struct pdb_res_st));
     mem_free(res_mc, res, 0);
   }
 }
