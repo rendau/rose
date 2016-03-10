@@ -18,6 +18,7 @@ struct req_st {
   struct obj_st obj;
   void *ro;
   str_t q;
+  pdb_res_t r;
   pdb_arft_t cb;
 };
 
@@ -36,7 +37,7 @@ static uint16_t res_mc = 0;
 static uint16_t req_mc = 0;
 static chain_t _rq;
 
-static pdb_res_t _qe(PGconn *c, char *query);
+static int _qe(PGconn *c, char *query, pdb_res_t res);
 static int _qea(void *arg, void *ro, void **result);
 static int _qear(void *ro, void *arg, void *result);
 static pdb_con_t pdb_con_new();
@@ -115,24 +116,24 @@ pdb_connect(pdb_con_t *con, char *host, char *port,
 pdb_res_t
 pdb_qe(pdb_con_t con, char *query) {
   pdb_res_t res;
+  int ret;
 
   ASSERT(!con, "bad con");
 
-  res = _qe((PGconn *)con->sc, query);
-  ASSERT(!res, "_qe");
+  res = pdb_res_new();
+  ASSERT(!res, "pdb_res_new");
+
+  ret = _qe((PGconn *)con->sc, query, res);
+  ASSERT(ret, "_qe");
 
   return res;
  error:
   return NULL;
 }
 
-static pdb_res_t
-_qe(PGconn *c, char *query) {
-  pdb_res_t res;
+static int
+_qe(PGconn *c, char *query, pdb_res_t res) {
   unsigned char st;
-
-  res = pdb_res_new();
-  ASSERT(!res, "pdb_res_new");
 
   res->r = PQexec(c, query);
   st = PQresultStatus((PGresult *)res->r);
@@ -162,9 +163,7 @@ _qe(PGconn *c, char *query) {
     }
   }
 
-  return res;
- error:
-  return NULL;
+  return 0;
 }
 
 
@@ -213,11 +212,12 @@ pdb_qea(pdb_con_t con, char *query, void *ro, pdb_arft_t cb) {
 static int
 _qea(void *arg, void *ro, void **result) {
   ses_t ses;
+  int ret;
 
   ses = (ses_t)arg;
 
-  *result = _qe(ses->c, ses->req->q->v);
-  ASSERT(!*result, "_qe");
+  ret = _qe(ses->c, ses->req->q->v, ses->req->r);
+  ASSERT(ret, "_qe");
 
   return 0;
  error:
@@ -233,21 +233,18 @@ _qear(void *ro, void *arg, void *result) {
   ses = (ses_t)arg;
 
   req = ses->req;
+
   ses->req = NULL;
-
-  ret = req->cb(req->ro, (pdb_res_t)result);
-  ASSERT(ret, "cb()");
-
-  pdb_res_destroy((pdb_res_t)result);
-
-  req_destroy(req);
-
   if(_rq->first) {
-    req = (req_t)chain_remove_slot(_rq, _rq->first);
-    ses->req = req;
+    ses->req = (req_t)chain_remove_slot(_rq, _rq->first);
     ret = thm_addJob(NULL, _qea, ses, _qear);
     ASSERT(ret, "thm_addJob");
   }
+
+  ret = req->cb(req->ro, req->r);
+  ASSERT(ret, "cb()");
+
+  req_destroy(req);
 
   return 0;
  error:
@@ -328,9 +325,10 @@ pdb_res_new() {
 void
 pdb_res_destroy(pdb_res_t res) {
   if(res) {
-    if(res->r)
+    if(res->r) {
       PQclear((PGresult *)res->r);
-    memset(res, 0, sizeof(struct pdb_res_st));
+      res->r = NULL;
+    }
     mem_free(res_mc, res, 0);
   }
 }
@@ -349,6 +347,9 @@ req_new() {
   req->q = str_new();
   ASSERT(!req->q, "str_new");
 
+  req->r = pdb_res_new();
+  ASSERT(!req->r, "pdb_res_new");
+
   return req;
  error:
   return NULL;
@@ -358,6 +359,9 @@ static void
 req_destroy(req_t req) {
   if(req) {
     OBJ_DESTROY(req->q);
+    req->q = NULL;
+    pdb_res_destroy(req->r);
+    req->r = NULL;
     mem_free(req_mc, req, 0);
   }
 }

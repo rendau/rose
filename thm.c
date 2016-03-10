@@ -167,13 +167,14 @@ _thread_routine(void *arg) {
     ret = read(ctx->p1[0], &byte, 1);
     ASSERT(ret<0, "read");
     if(ret > 0) {
-      ASSERT(!ctx->job, "has not job");
-      job = ctx->job;
-      job->res = NULL;
-      ret = job->jf(job->ja, job->ro, &job->res);
-      ASSERT(ret, "job_fun()");
-      ret = write(ctx->p2[1], "a", 1);
-      ASSERT(ret<=0, "write");
+      if(ctx->job) {
+	job = ctx->job;
+	job->res = NULL;
+	ret = job->jf(job->ja, job->ro, &job->res);
+	ASSERT(ret, "job_fun()");
+	ret = write(ctx->p2[1], "a", 1);
+	ASSERT(ret<=0, "write");
+      }
     } else
       break;
   }
@@ -197,16 +198,17 @@ _th_read_h(poll_fd_t poll_fd) {
   if(ret == 0) {
     return _th_close_h(poll_fd);
   } else if(ret > 0) {
-    job = tctx->job;
-    tctx->job = NULL;
-    ret = job->rf(job->ro, job->ja, job->res);
-    ASSERT(ret, "result_fun()");
-    job_destroy(job);
-    if(_jl->first) {
-      job = (job_t)chain_remove_slot(_jl, _jl->first);
-      tctx->job = job;
-      ret = write(tctx->p1[1], "a", 1);
-      ASSERT(ret<=0, "write");
+    if(tctx->job) {
+      job = tctx->job;
+      tctx->job = NULL;
+      if(_jl->first) {
+	tctx->job = (job_t)chain_remove_slot(_jl, _jl->first);
+	ret = write(tctx->p1[1], "a", 1);
+	ASSERT(ret<=0, "write");
+      }
+      ret = job->rf(job->ro, job->ja, job->res);
+      ASSERT(ret, "result_fun()");
+      job_destroy(job);
     }
   }
 
@@ -233,8 +235,6 @@ job_new() {
   ASSERT(!job, "mem_alloc");
 
   memset(job, 0, sizeof(struct job_st));
-
-  job->obj.type = OBJ_OBJECT;
 
   return job;
  error:
